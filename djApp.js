@@ -36,7 +36,7 @@ function listenRequests() {
     snapshot.forEach(docSnap => {
       const data = docSnap.data();
       const li = document.createElement("li");
-      li.textContent = data.song;
+      li.textContent = `${data.song} ${data.spotifyId ? `(ID: ${data.spotifyId})` : ""}`;
 
       const btnPlayed = document.createElement("button");
       btnPlayed.textContent = "Reproducida";
