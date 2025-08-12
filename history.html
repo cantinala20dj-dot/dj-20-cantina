@@ -5,24 +5,31 @@
   <title>Historial de Solicitudes - DJ Cantina 20</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    .filters { display:flex; gap:10px; margin-bottom:12px; }
-    table { border-collapse: collapse; width: 100%; max-width: 900px; }
+    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; }
+    table { border-collapse: collapse; width: 100%; max-width: 960px; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
     th { background:#f4f4f4; text-align:left; }
+    .pill { padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
+    .pending{ background:#fff3cd; }
+    .played{ background:#d1e7dd; }
+    .rejected{ background:#f8d7da; }
   </style>
 </head>
 <body>
   <h1>Historial de Solicitudes</h1>
-  <div class="filters">
-    <select id="statusFilter">
-      <option value="all">Todos</option>
-      <option value="pending">Pendientes</option>
-      <option value="played">Reproducidas</option>
-      <option value="rejected">Rechazadas</option>
-    </select>
-    <input type="date" id="fromDate" />
-    <input type="date" id="toDate" />
-    <button id="applyFilters">Aplicar filtros</button>
+
+  <div class="toolbar">
+    <label>Estado:
+      <select id="statusFilter">
+        <option value="all">Todos</option>
+        <option value="pending">Pendientes</option>
+        <option value="played">Reproducidas</option>
+        <option value="rejected">Rechazadas</option>
+      </select>
+    </label>
+    <label>Desde: <input type="date" id="fromDate" /></label>
+    <label>Hasta: <input type="date" id="toDate" /></label>
+    <button id="clearFilters">Limpiar filtros</button>
   </div>
 
   <table>
@@ -31,15 +38,118 @@
         <th>Fecha/Hora</th>
         <th>Canción</th>
         <th>Spotify ID</th>
-        <th>Status</th>
+        <th>Estado</th>
       </tr>
     </thead>
     <tbody id="historyBody"></tbody>
   </table>
 
-  <!-- Script embebido -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getFirestore, collection, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+    import {
+      getFirestore, collection, onSnapshot, orderBy, query
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
     const firebaseConfig = {
+      apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
+      authDomain: "dj-cantina-20.firebaseapp.com",
+      projectId: "dj-cantina-20",
+      storageBucket: "dj-cantina-20.firebasestorage.app",
+      messagingSenderId: "777157429108",
+      appId: "1:777157429108:web:de2efae209dcca67228e21"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    const statusFilter = document.getElementById("statusFilter");
+    const fromDate = document.getElementById("fromDate");
+    const toDate = document.getElementById("toDate");
+    const clearBtn = document.getElementById("clearFilters");
+    const tbody = document.getElementById("historyBody");
+
+    let allRows = []; // cache local en tiempo real
+
+    // Escucha en tiempo real TODO el historial
+    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+    onSnapshot(q, (snap) => {
+      allRows = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        allRows.push({
+          ts: toMillis(d.timestamp),
+          song: d.song || "",
+          id: d.spotifyId || "",
+          status: d.status || "pending"
+        });
+      });
+      render();
+    }, (err) => {
+      // Fallback: si hay problemas con orderBy (p.ej. timestamps nulos), vuelve sin ordenar
+      console.error("Snapshot error:", err);
+      const q2 = collection(db, "requests");
+      onSnapshot(q2, (snap2) => {
+        allRows = [];
+        snap2.forEach(doc => {
+          const d = doc.data();
+          allRows.push({
+            ts: toMillis(d.timestamp),
+            song: d.song || "",
+            id: d.spotifyId || "",
+            status: d.status || "pending"
+          });
+        });
+        render();
+      });
+    });
+
+    function toMillis(ts) {
+      if (!ts) return null;
+      // puede ser number, Date, o Firestore Timestamp
+      if (typeof ts === "number") return ts;
+      if (ts instanceof Date) return ts.getTime();
+      if (typeof ts.toMillis === "function") return ts.toMillis();
+      return null;
+    }
+
+    function render() {
+      const sVal = statusFilter.value;
+      const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
+      const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
+
+      tbody.innerHTML = "";
+      const rows = allRows.filter(r => {
+        if (sVal !== "all" && r.status !== sVal) return false;
+        if (fromTs && (r.ts ?? 0) < fromTs) return false;
+        if (toTs && (r.ts ?? 0) > toTs) return false;
+        return true;
+      });
+
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+        tr.innerHTML = `
+          <td>${dt}</td>
+          <td>${escapeHtml(r.song)}</td>
+          <td>${escapeHtml(r.id)}</td>
+          <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    statusFilter.addEventListener("change", render);
+    fromDate.addEventListener("change", render);
+    toDate.addEventListener("change", render);
+    clearBtn.addEventListener("click", () => {
+      statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
+    });
+
+    function escapeHtml(str) {
+      return String(str ?? "").replace(/[&<>"']/g, s => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[s]));
+    }
+  </script>
+</body>
+</html>
