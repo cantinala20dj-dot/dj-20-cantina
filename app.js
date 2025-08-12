@@ -13,49 +13,63 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const songsBase = [
-  "Shape of You",
-  "Despacito",
-  "Bohemian Rhapsody",
-  "Imagine",
-  "Billie Jean",
-  "Let It Be",
-  "Smells Like Teen Spirit",
-  "Rolling in the Deep",
-  "Happy",
-  "Uptown Funk"
-];
-
 const input = document.getElementById("songSearch");
 const suggestions = document.getElementById("suggestions");
 const sendBtn = document.getElementById("sendSong");
 const status = document.getElementById("status");
 
-input.addEventListener("input", () => {
-  const query = input.value.toLowerCase().trim();
-  suggestions.innerHTML = "";
-  if (query.length === 0) return;
+function debounce(func, wait) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
 
-  const filtered = songsBase.filter(s => s.toLowerCase().includes(query)).slice(0, 5);
-  filtered.forEach(song => {
-    const li = document.createElement("li");
-    li.textContent = song;
-    li.addEventListener("click", () => {
-      input.value = song;
-      suggestions.innerHTML = "";
-    });
-    suggestions.appendChild(li);
-  });
-});
+input.addEventListener(
+  "input",
+  debounce(async () => {
+    const query = input.value.trim();
+    suggestions.innerHTML = "";
+    if (!query) return;
+
+    try {
+      const res = await fetch(`/api/searchSpotify?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+
+      if (!data.results || data.results.length === 0) return;
+
+      data.results.forEach(track => {
+        const li = document.createElement("li");
+        li.textContent = `${track.name} - ${track.artist}`;
+        li.addEventListener("click", () => {
+          input.value = track.name;
+          suggestions.innerHTML = "";
+          input.dataset.spotifyId = track.id;
+        });
+        suggestions.appendChild(li);
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  }, 200)
+);
 
 sendBtn.addEventListener("click", async () => {
   const song = input.value.trim();
+  const spotifyId = input.dataset.spotifyId || null;
   if (!song) return;
 
   try {
-    await addDoc(collection(db, "requests"), { song, status: "pending", timestamp: Date.now() });
+    await addDoc(collection(db, "requests"), {
+      song,
+      spotifyId,
+      status: "pending",
+      timestamp: Date.now()
+    });
     status.textContent = "✅ Se ha enviado con éxito. ¡Dale like a nuestro Instagram!";
     input.value = "";
+    input.dataset.spotifyId = "";
     suggestions.innerHTML = "";
   } catch (error) {
     status.textContent = "❌ Error al enviar, intenta de nuevo.";
