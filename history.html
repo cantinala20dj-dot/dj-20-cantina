@@ -5,7 +5,7 @@
   <title>Historial de Solicitudes - DJ Cantina 20</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; }
+    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
     table { border-collapse: collapse; width: 100%; max-width: 960px; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
     th { background:#f4f4f4; text-align:left; }
@@ -13,6 +13,8 @@
     .pending{ background:#fff3cd; }
     .played{ background:#d1e7dd; }
     .rejected{ background:#f8d7da; }
+    #topSongs { margin:14px 0; }
+    #topSongs ol { margin:6px 0 0 20px; }
   </style>
 </head>
 <body>
@@ -30,7 +32,10 @@
     <label>Desde: <input type="date" id="fromDate" /></label>
     <label>Hasta: <input type="date" id="toDate" /></label>
     <button id="clearFilters">Limpiar filtros</button>
+    <button id="exportCsv">Exportar CSV</button>
   </div>
+
+  <div id="topSongs"></div>
 
   <table>
     <thead>
@@ -66,11 +71,13 @@
     const fromDate = document.getElementById("fromDate");
     const toDate = document.getElementById("toDate");
     const clearBtn = document.getElementById("clearFilters");
+    const exportBtn = document.getElementById("exportCsv");
     const tbody = document.getElementById("historyBody");
+    const topBox = document.getElementById("topSongs");
 
     let allRows = []; // cache local en tiempo real
 
-    // Escucha en tiempo real TODO el historial
+    // Escucha en tiempo real TODO el historial (ordenado por timestamp si existe)
     const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
     onSnapshot(q, (snap) => {
       allRows = [];
@@ -85,10 +92,9 @@
       });
       render();
     }, (err) => {
-      // Fallback: si hay problemas con orderBy (p.ej. timestamps nulos), vuelve sin ordenar
       console.error("Snapshot error:", err);
-      const q2 = collection(db, "requests");
-      onSnapshot(q2, (snap2) => {
+      // Fallback sin orderBy
+      onSnapshot(collection(db, "requests"), (snap2) => {
         allRows = [];
         snap2.forEach(doc => {
           const d = doc.data();
@@ -105,26 +111,36 @@
 
     function toMillis(ts) {
       if (!ts) return null;
-      // puede ser number, Date, o Firestore Timestamp
       if (typeof ts === "number") return ts;
       if (ts instanceof Date) return ts.getTime();
       if (typeof ts.toMillis === "function") return ts.toMillis();
       return null;
     }
 
-    function render() {
+    function escapeHtml(str) {
+      return String(str ?? "").replace(/[&<>"']/g, s => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[s]));
+    }
+
+    function getFilteredRows() {
       const sVal = statusFilter.value;
       const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
       const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
 
-      tbody.innerHTML = "";
-      const rows = allRows.filter(r => {
+      return allRows.filter(r => {
         if (sVal !== "all" && r.status !== sVal) return false;
         if (fromTs && (r.ts ?? 0) < fromTs) return false;
         if (toTs && (r.ts ?? 0) > toTs) return false;
         return true;
       });
+    }
 
+    function render() {
+      const rows = getFilteredRows();
+
+      // Tabla
+      tbody.innerHTML = "";
       rows.forEach(r => {
         const tr = document.createElement("tr");
         const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
@@ -136,6 +152,17 @@
         `;
         tbody.appendChild(tr);
       });
+
+      // Top 10 más pedidas (de lo filtrado)
+      const counts = {};
+      rows.forEach(r => {
+        if (!r.song) return;
+        counts[r.song] = (counts[r.song] || 0) + 1;
+      });
+      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      topBox.innerHTML =
+        "<h3>Top 10 más pedidas</h3>" +
+        (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
     }
 
     statusFilter.addEventListener("change", render);
@@ -145,11 +172,24 @@
       statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
     });
 
-    function escapeHtml(str) {
-      return String(str ?? "").replace(/[&<>"']/g, s => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
-      }[s]));
-    }
+    // Exportar CSV de lo filtrado
+    exportBtn.addEventListener("click", () => {
+      const rows = getFilteredRows();
+      const header = ["Fecha/Hora","Canción","Spotify ID","Status"];
+      const lines = rows.map(r => {
+        const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+        return [dt, r.song, r.id, r.status]
+          .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
+      });
+      const csv = [header.join(","), ...lines].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `historial_dj_cantina_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   </script>
 </body>
 </html>
