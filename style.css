@@ -1,5 +1,31 @@
-body { font-family: Arial; background: #f4f4f4; padding: 20px; }
-h1 { color: #b22222; }
-input, button { padding: 10px; margin: 5px 0; }
-ul { list-style: none; padding: 0; }
-li { background: white; margin: 5px 0; padding: 10px; border-radius: 5px; }
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+}
+
+#suggestions {
+  border: 1px solid #ccc;
+  max-width: 300px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#suggestions li {
+  padding: 5px;
+  cursor: pointer;
+}
+
+#suggestions li:hover {
+  background: #eee;
+}
+
+button {
+  margin-top: 10px;
+  padding: 8px 16px;
+  font-size: 16px;
+}
+
+#requests li {
+  margin-bottom: 8px;
+}
