@@ -5,6 +5,11 @@
   <title>Historial de Solicitudes - DJ Cantina 20</title>
   <link rel="stylesheet" href="style.css" />
   <style>
+    body { font-family: Arial, sans-serif; }
+    .gate { max-width: 360px; margin: 60px auto; border:1px solid #ddd; padding:20px; border-radius:8px; }
+    .gate h2 { margin-top:0; }
+    .gate input { width:100%; padding:10px; margin:8px 0; }
+    .hidden { display:none; }
     .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
     table { border-collapse: collapse; width: 100%; max-width: 960px; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
@@ -18,85 +23,119 @@
   </style>
 </head>
 <body>
-  <h1>Historial de Solicitudes</h1>
 
-  <div class="toolbar">
-    <label>Estado:
-      <select id="statusFilter">
-        <option value="all">Todos</option>
-        <option value="pending">Pendientes</option>
-        <option value="played">Reproducidas</option>
-        <option value="rejected">Rechazadas</option>
-      </select>
-    </label>
-    <label>Desde: <input type="date" id="fromDate" /></label>
-    <label>Hasta: <input type="date" id="toDate" /></label>
-    <button id="clearFilters">Limpiar filtros</button>
-    <button id="exportCsv">Exportar CSV</button>
+  <!-- Pantalla de acceso -->
+  <div id="gate" class="gate">
+    <h2>Acceso al historial</h2>
+    <p>Introduce la contraseña del DJ para ver el historial.</p>
+    <input type="password" id="histPass" placeholder="Contraseña" />
+    <button id="enterBtn">Entrar</button>
+    <p id="gateMsg" style="color:#b00020; margin:8px 0 0 0;"></p>
   </div>
 
-  <div id="topSongs"></div>
+  <!-- Contenido protegido -->
+  <div id="app" class="hidden">
+    <h1>Historial de Solicitudes</h1>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Fecha/Hora</th>
-        <th>Canción</th>
-        <th>Spotify ID</th>
-        <th>Estado</th>
-      </tr>
-    </thead>
-    <tbody id="historyBody"></tbody>
-  </table>
+    <div class="toolbar">
+      <label>Estado:
+        <select id="statusFilter">
+          <option value="all">Todos</option>
+          <option value="pending">Pendientes</option>
+          <option value="played">Reproducidas</option>
+          <option value="rejected">Rechazadas</option>
+        </select>
+      </label>
+      <label>Desde: <input type="date" id="fromDate" /></label>
+      <label>Hasta: <input type="date" id="toDate" /></label>
+      <button id="clearFilters">Limpiar filtros</button>
+      <button id="exportCsv">Exportar CSV</button>
+    </div>
 
+    <div id="topSongs"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha/Hora</th>
+          <th>Canción</th>
+          <th>Spotify ID</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <!-- App en módulo: solo inicializa Firebase tras contraseña correcta -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import {
-      getFirestore, collection, onSnapshot, orderBy, query
-    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+    const HISTORY_PASS = "Dj20cantina"; // ← cámbiala aquí si quieres otra clave
+    const PASS_KEY = "djcantina_history_ok";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
-      authDomain: "dj-cantina-20.firebaseapp.com",
-      projectId: "dj-cantina-20",
-      storageBucket: "dj-cantina-20.firebasestorage.app",
-      messagingSenderId: "777157429108",
-      appId: "1:777157429108:web:de2efae209dcca67228e21"
-    };
+    const gate = document.getElementById("gate");
+    const app = document.getElementById("app");
+    const passInput = document.getElementById("histPass");
+    const enterBtn = document.getElementById("enterBtn");
+    const gateMsg = document.getElementById("gateMsg");
 
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
+    // si ya se autenticó antes en este navegador, abre directo
+    if (localStorage.getItem(PASS_KEY) === "1") {
+      openApp();
+    }
 
-    const statusFilter = document.getElementById("statusFilter");
-    const fromDate = document.getElementById("fromDate");
-    const toDate = document.getElementById("toDate");
-    const clearBtn = document.getElementById("clearFilters");
-    const exportBtn = document.getElementById("exportCsv");
-    const tbody = document.getElementById("historyBody");
-    const topBox = document.getElementById("topSongs");
+    enterBtn.addEventListener("click", () => {
+      if (passInput.value === HISTORY_PASS) {
+        localStorage.setItem(PASS_KEY, "1");
+        openApp();
+      } else {
+        gateMsg.textContent = "Contraseña incorrecta.";
+      }
+    });
 
-    let allRows = []; // cache local en tiempo real
+    function openApp() {
+      gate.classList.add("hidden");
+      app.classList.remove("hidden");
+      initHistory(); // aquí recién cargamos Firebase y datos
+    }
 
-    // Escucha en tiempo real TODO el historial (ordenado por timestamp si existe)
-    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-    onSnapshot(q, (snap) => {
-      allRows = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        allRows.push({
-          ts: toMillis(d.timestamp),
-          song: d.song || "",
-          id: d.spotifyId || "",
-          status: d.status || "pending"
-        });
-      });
-      render();
-    }, (err) => {
-      console.error("Snapshot error:", err);
-      // Fallback sin orderBy
-      onSnapshot(collection(db, "requests"), (snap2) => {
+    async function initHistory() {
+      // Import dinámico solo tras pasar la contraseña
+      const [{ initializeApp }, firestore] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"),
+      ]);
+
+      const {
+        getFirestore, collection, onSnapshot, orderBy, query
+      } = firestore;
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
+        authDomain: "dj-cantina-20.firebaseapp.com",
+        projectId: "dj-cantina-20",
+        storageBucket: "dj-cantina-20.firebasestorage.app",
+        messagingSenderId: "777157429108",
+        appId: "1:777157429108:web:de2efae209dcca67228e21"
+      };
+
+      const appFB = initializeApp(firebaseConfig);
+      const db  = getFirestore(appFB);
+
+      const statusFilter = document.getElementById("statusFilter");
+      const fromDate = document.getElementById("fromDate");
+      const toDate = document.getElementById("toDate");
+      const clearBtn = document.getElementById("clearFilters");
+      const exportBtn = document.getElementById("exportCsv");
+      const tbody = document.getElementById("historyBody");
+      const topBox = document.getElementById("topSongs");
+
+      let allRows = []; // cache local en tiempo real
+
+      // Escucha en tiempo real (ordenado si existe timestamp)
+      const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+      onSnapshot(q, (snap) => {
         allRows = [];
-        snap2.forEach(doc => {
+        snap.forEach(doc => {
           const d = doc.data();
           allRows.push({
             ts: toMillis(d.timestamp),
@@ -106,90 +145,107 @@
           });
         });
         render();
+      }, (err) => {
+        console.error("Snapshot error:", err);
+        // Fallback sin orderBy
+        onSnapshot(collection(db, "requests"), (snap2) => {
+          allRows = [];
+          snap2.forEach(doc => {
+            const d = doc.data();
+            allRows.push({
+              ts: toMillis(d.timestamp),
+              song: d.song || "",
+              id: d.spotifyId || "",
+              status: d.status || "pending"
+            });
+          });
+          render();
+        });
       });
-    });
 
-    function toMillis(ts) {
-      if (!ts) return null;
-      if (typeof ts === "number") return ts;
-      if (ts instanceof Date) return ts.getTime();
-      if (typeof ts.toMillis === "function") return ts.toMillis();
-      return null;
+      function toMillis(ts) {
+        if (!ts) return null;
+        if (typeof ts === "number") return ts;
+        if (ts instanceof Date) return ts.getTime();
+        if (typeof ts.toMillis === "function") return ts.toMillis();
+        return null;
+      }
+
+      function escapeHtml(str) {
+        return String(str ?? "").replace(/[&<>"']/g, s => ({
+          "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+        }[s]));
+      }
+
+      function getFilteredRows() {
+        const sVal = statusFilter.value;
+        const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
+        const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
+
+        return allRows.filter(r => {
+          if (sVal !== "all" && r.status !== sVal) return false;
+          if (fromTs && (r.ts ?? 0) < fromTs) return false;
+          if (toTs && (r.ts ?? 0) > toTs) return false;
+          return true;
+        });
+      }
+
+      function render() {
+        const rows = getFilteredRows();
+
+        // Tabla
+        tbody.innerHTML = "";
+        rows.forEach(r => {
+          const tr = document.createElement("tr");
+          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+          tr.innerHTML = `
+            <td>${dt}</td>
+            <td>${escapeHtml(r.song)}</td>
+            <td>${escapeHtml(r.id)}</td>
+            <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // Top 10 (según filtros)
+        const counts = {};
+        rows.forEach(r => {
+          if (!r.song) return;
+          counts[r.song] = (counts[r.song] || 0) + 1;
+        });
+        const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+        topBox.innerHTML =
+          "<h3>Top 10 más pedidas</h3>" +
+          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>"
+                      : "<p>Sin datos</p>");
+      }
+
+      statusFilter.addEventListener("change", render);
+      fromDate.addEventListener("change", render);
+      toDate.addEventListener("change", render);
+      clearBtn.addEventListener("click", () => {
+        statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
+      });
+
+      // Exportar CSV (según filtros)
+      exportBtn.addEventListener("click", () => {
+        const rows = getFilteredRows();
+        const header = ["Fecha/Hora","Canción","Spotify ID","Status"];
+        const lines = rows.map(r => {
+          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+          return [dt, r.song, r.id, r.status]
+            .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
+        });
+        const csv = [header.join(","), ...lines].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `historial_dj_cantina_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
     }
-
-    function escapeHtml(str) {
-      return String(str ?? "").replace(/[&<>"']/g, s => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
-      }[s]));
-    }
-
-    function getFilteredRows() {
-      const sVal = statusFilter.value;
-      const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
-      const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
-
-      return allRows.filter(r => {
-        if (sVal !== "all" && r.status !== sVal) return false;
-        if (fromTs && (r.ts ?? 0) < fromTs) return false;
-        if (toTs && (r.ts ?? 0) > toTs) return false;
-        return true;
-      });
-    }
-
-    function render() {
-      const rows = getFilteredRows();
-
-      // Tabla
-      tbody.innerHTML = "";
-      rows.forEach(r => {
-        const tr = document.createElement("tr");
-        const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-        tr.innerHTML = `
-          <td>${dt}</td>
-          <td>${escapeHtml(r.song)}</td>
-          <td>${escapeHtml(r.id)}</td>
-          <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
-        `;
-        tbody.appendChild(tr);
-      });
-
-      // Top 10 más pedidas (de lo filtrado)
-      const counts = {};
-      rows.forEach(r => {
-        if (!r.song) return;
-        counts[r.song] = (counts[r.song] || 0) + 1;
-      });
-      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      topBox.innerHTML =
-        "<h3>Top 10 más pedidas</h3>" +
-        (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
-    }
-
-    statusFilter.addEventListener("change", render);
-    fromDate.addEventListener("change", render);
-    toDate.addEventListener("change", render);
-    clearBtn.addEventListener("click", () => {
-      statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
-    });
-
-    // Exportar CSV de lo filtrado
-    exportBtn.addEventListener("click", () => {
-      const rows = getFilteredRows();
-      const header = ["Fecha/Hora","Canción","Spotify ID","Status"];
-      const lines = rows.map(r => {
-        const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-        return [dt, r.song, r.id, r.status]
-          .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
-      });
-      const csv = [header.join(","), ...lines].join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `historial_dj_cantina_${new Date().toISOString().slice(0,10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
   </script>
 </body>
 </html>
