@@ -1,353 +1,37 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
   <meta charset="UTF-8" />
-  <title>Historial de Solicitudes - DJ’ Cantina 20</title>
+  <title>Historial de Canciones — DJ’ Cantina 20</title>
+
+  <!-- Tipografía y color del navegador -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#111114">
+
   <link rel="stylesheet" href="style.css" />
-  <style>
-    body { font-family: Arial, sans-serif; }
-    .gate { max-width: 360px; margin: 60px auto; border:1px solid #ddd; padding:20px; border-radius:8px; }
-    .gate h2 { margin-top:0; }
-    .gate input { width:100%; padding:10px; margin:8px 0; }
-    .hidden { display:none; }
-    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
-    table { border-collapse: collapse; width: 100%; max-width: 960px; }
-    th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
-    th { background:#f4f4f4; text-align:left; }
-    .pill { padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
-    .pending{ background:#fff3cd; }
-    .played{ background:#d1e7dd; }
-    .rejected{ background:#f8d7da; }
-    #topSongs { margin:14px 0; }
-    #topSongs ol { margin:6px 0 0 20px; }
-    .badge{
-      margin-left:8px; font-weight:700; padding:2px 8px; border-radius:999px;
-      background:#20222b; border:1px solid #343648; display:inline-block;
-    }
-  </style>
 </head>
 <body>
+  <main class="container">
+    <header class="header">
+      <img id="logo" alt="Logo">
+      <div>
+        <h1 data-brand-name>DJ’ Cantina 20</h1>
+        <p>Historial de canciones — sucursal: <strong id="unitTag">general</strong></p>
+      </div>
+    </header>
 
-  <!-- Pantalla de acceso -->
-  <div id="gate" class="gate">
-    <h2>Acceso al historial</h2>
-    <p>Introduce la contraseña del DJ para ver el historial.</p>
-    <input type="password" id="histPass" placeholder="Contraseña" />
-    <button id="enterBtn">Entrar</button>
-    <p id="gateMsg" style="color:#b00020; margin:8px 0 0 0;"></p>
-  </div>
+    <section class="card">
+      <ul id="history"></ul>
+    </section>
+  </main>
 
-  <!-- Contenido protegido -->
-  <div id="app" class="hidden">
-    <h1>Historial de Solicitudes</h1>
-    <p style="color:#b3b3b9">Sucursal filtrada: <strong id="unitTag"></strong></p>
-
-    <div class="toolbar">
-      <label>Estado:
-        <select id="statusFilter">
-          <option value="all">Todos</option>
-          <option value="pending">Pendientes</option>
-          <option value="played">Reproducidas</option>
-          <option value="rejected">Rechazadas</option>
-        </select>
-      </label>
-      <label>Desde: <input type="date" id="fromDate" /></label>
-      <label>Hasta: <input type="date" id="toDate" /></label>
-      <label style="display:flex; align-items:center; gap:6px;">
-        <input type="checkbox" id="groupToggle" checked>
-        Agrupar duplicadas (🔥)
-      </label>
-      <button id="clearFilters">Limpiar filtros</button>
-      <button id="exportCsv">Exportar CSV</button>
-    </div>
-
-    <div id="topSongs"></div>
-
-    <table>
-      <thead>
-        <tr id="theadRow">
-          <th>Fecha/Hora</th>
-          <th>Canción</th>
-          <th>Spotify ID</th>
-          <th>Estado</th>
-          <th>Sucursal</th>
-        </tr>
-      </thead>
-      <tbody id="historyBody"></tbody>
-    </table>
-  </div>
-
-  <!-- App en módulo: inicializa Firebase tras contraseña correcta -->
-  <script type="module">
-    const HISTORY_PASS = "Dj20cantina";
-    const PASS_KEY = "djcantina_history_ok";
-
-    // --- filtro automático por sucursal via ?unit= ---
-    const unitFromURL = new URLSearchParams(location.search).get('unit') || null;
-    const unitTagEl = document.getElementById('unitTag');
-    if (unitTagEl) unitTagEl.textContent = unitFromURL || 'todas';
-
-    const gate = document.getElementById("gate");
-    const app = document.getElementById("app");
-    const passInput = document.getElementById("histPass");
-    const enterBtn = document.getElementById("enterBtn");
-    const gateMsg = document.getElementById("gateMsg");
-
-    if (localStorage.getItem(PASS_KEY) === "1") openApp();
-    enterBtn.addEventListener("click", () => {
-      if (passInput.value === HISTORY_PASS) {
-        localStorage.setItem(PASS_KEY, "1");
-        openApp();
-      } else gateMsg.textContent = "Contraseña incorrecta.";
-    });
-
-    function openApp() {
-      gate.classList.add("hidden");
-      app.classList.remove("hidden");
-      initHistory(); // carga Firebase + datos
-    }
-
-    async function initHistory() {
-      const [{ initializeApp }, firestore] = await Promise.all([
-        import("https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"),
-        import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"),
-      ]);
-
-      const {
-        getFirestore, collection, onSnapshot, orderBy, query
-      } = firestore;
-
-      const firebaseConfig = {
-        apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
-        authDomain: "dj-cantina-20.firebaseapp.com",
-        projectId: "dj-cantina-20",
-        storageBucket: "dj-cantina-20.firebasestorage.app",
-        messagingSenderId: "777157429108",
-        appId: "1:777157429108:web:de2efae209dcca67228e21"
-      };
-
-      const appFB = initializeApp(firebaseConfig);
-      const db  = getFirestore(appFB);
-
-      // DOM refs
-      const statusFilter = document.getElementById("statusFilter");
-      const fromDate = document.getElementById("fromDate");
-      const toDate = document.getElementById("toDate");
-      const clearBtn = document.getElementById("clearFilters");
-      const exportBtn = document.getElementById("exportCsv");
-      const groupToggle = document.getElementById("groupToggle");
-      const tbody = document.getElementById("historyBody");
-      const topBox = document.getElementById("topSongs");
-      const theadRow = document.getElementById("theadRow");
-
-      let allRows = []; // cache local en tiempo real
-
-      // Escucha en tiempo real (ordenado si existe timestamp)
-      const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-      onSnapshot(q, (snap) => {
-        allRows = [];
-        snap.forEach(doc => {
-          const d = doc.data();
-          allRows.push({
-            ts: toMillis(d.timestamp),
-            song: d.song || "",
-            id: d.spotifyId || "",
-            status: d.status || "pending",
-            unit: d.unitId || "general"
-          });
-        });
-        render();
-      }, (err) => {
-        console.error("Snapshot error:", err);
-        // Fallback sin orderBy
-        onSnapshot(collection(db, "requests"), (snap2) => {
-          allRows = [];
-          snap2.forEach(doc => {
-            const d = doc.data();
-            allRows.push({
-              ts: toMillis(d.timestamp),
-              song: d.song || "",
-              id: d.spotifyId || "",
-              status: d.status || "pending",
-              unit: d.unitId || "general"
-            });
-          });
-          render();
-        });
-      });
-
-      function toMillis(ts) {
-        if (!ts) return null;
-        if (typeof ts === "number") return ts;
-        if (ts instanceof Date) return ts.getTime();
-        if (typeof ts.toMillis === "function") return ts.toMillis();
-        return null;
-      }
-
-      function escapeHtml(str) {
-        return String(str ?? "").replace(/[&<>"']/g, s => ({
-          "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
-        }[s]));
-      }
-
-      function getFilteredRows() {
-        const sVal = statusFilter.value;
-        const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
-        const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
-
-        return allRows.filter(r => {
-          if (unitFromURL && r.unit !== unitFromURL) return false; // filtro por sucursal
-          if (sVal !== "all" && r.status !== sVal) return false;   // por estado
-          if (fromTs && (r.ts ?? 0) < fromTs) return false;        // por fecha
-          if (toTs && (r.ts ?? 0) > toTs) return false;
-          return true;
-        });
-      }
-
-      // Agrupa por clave (spotifyId si existe, si no por nombre)
-      function groupRows(rows) {
-        const groups = new Map();
-        rows.forEach(r => {
-          const keyBase = (r.id && String(r.id).trim()) || (r.song && String(r.song).trim()) || "";
-          const key = keyBase.toLowerCase();
-          if (!key) return;
-          if (!groups.has(key)) {
-            groups.set(key, {
-              song: r.song, id: r.id, unit: r.unit,
-              count: 0, lastTs: 0,
-              byStatus: { pending:0, played:0, rejected:0 }
-            });
-          }
-          const g = groups.get(key);
-          g.count += 1;
-          g.lastTs = Math.max(g.lastTs || 0, r.ts || 0);
-          g.byStatus[r.status] = (g.byStatus[r.status] || 0) + 1;
-        });
-
-        // ordenar: primero más repetidas, luego última fecha
-        return Array.from(groups.values()).sort((a,b)=>{
-          const c = b.count - a.count;
-          if (c !== 0) return c;
-          return (b.lastTs||0) - (a.lastTs||0);
-        });
-      }
-
-      function render() {
-        const rows = getFilteredRows();
-        const grouped = groupToggle.checked;
-
-        // Ajustar encabezados
-        if (grouped) {
-          theadRow.innerHTML = `
-            <th>Última vez</th>
-            <th>Canción</th>
-            <th>Spotify ID</th>
-            <th>Conteo</th>
-            <th>Pend/Rep/Rech</th>
-            <th>Sucursal</th>
-          `;
-        } else {
-          theadRow.innerHTML = `
-            <th>Fecha/Hora</th>
-            <th>Canción</th>
-            <th>Spotify ID</th>
-            <th>Estado</th>
-            <th>Sucursal</th>
-          `;
-        }
-
-        tbody.innerHTML = "";
-
-        if (grouped) {
-          const gs = groupRows(rows);
-          gs.forEach(g => {
-            const tr = document.createElement("tr");
-            const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
-            const statusTriplet = `${g.byStatus.pending||0}/${g.byStatus.played||0}/${g.byStatus.rejected||0}`;
-            tr.innerHTML = `
-              <td>${dt}</td>
-              <td>${escapeHtml(g.song)} ${g.count>1?`<span class="badge">🔥 x${g.count}</span>`:""}</td>
-              <td>${escapeHtml(g.id)}</td>
-              <td>${g.count}</td>
-              <td>${statusTriplet}</td>
-              <td>${escapeHtml(g.unit)}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-
-          // Top 10 según agrupación
-          const top = gs.slice(0,10).map(g => [g.song, g.count]);
-          topBox.innerHTML =
-            "<h3>Top 10 más pedidas</h3>" +
-            (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
-
-        } else {
-          // Detalle uno a uno
-          rows.forEach(r => {
-            const tr = document.createElement("tr");
-            const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-            tr.innerHTML = `
-              <td>${dt}</td>
-              <td>${escapeHtml(r.song)}</td>
-              <td>${escapeHtml(r.id)}</td>
-              <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
-              <td>${escapeHtml(r.unit)}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-
-          // Top 10 por detalle
-          const counts = {};
-          rows.forEach(r => { if (r.song) counts[r.song] = (counts[r.song]||0)+1; });
-          const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-          topBox.innerHTML =
-            "<h3>Top 10 más pedidas</h3>" +
-            (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
-        }
-      }
-
-      statusFilter.addEventListener("change", render);
-      fromDate.addEventListener("change", render);
-      toDate.addEventListener("change", render);
-      groupToggle.addEventListener("change", render);
-
-      clearBtn.addEventListener("click", () => {
-        statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
-      });
-
-      // Exportar CSV (según modo)
-      exportBtn.addEventListener("click", () => {
-        const rows = getFilteredRows();
-        const grouped = groupToggle.checked;
-
-        if (grouped) {
-          const gs = groupRows(rows);
-          const header = ["Última vez","Canción","Spotify ID","Total","Pendientes","Reproducidas","Rechazadas","Sucursal"];
-          const lines = gs.map(g => {
-            const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
-            return [dt, g.song, g.id, g.count, g.byStatus.pending||0, g.byStatus.played||0, g.byStatus.rejected||0, g.unit]
-              .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
-          });
-          downloadCsv([header.join(","), ...lines].join("\n"), `historial_grouped_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
-        } else {
-          const header = ["Fecha/Hora","Canción","Spotify ID","Status","Sucursal"];
-          const lines = rows.map(r => {
-            const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-            return [dt, r.song, r.id, r.status, r.unit]
-              .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
-          });
-          downloadCsv([header.join(","), ...lines].join("\n"), `historial_detalle_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
-        }
-      });
-
-      function downloadCsv(csv, filename){
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-      }
-    }
+  <script type="module" src="branding.js"></script>
+  <script type="module" src="historyApp.js"></script>
+  <script>
+    const p = new URLSearchParams(location.search);
+    document.getElementById('unitTag').textContent = p.get('unit') || 'general';
   </script>
 </body>
 </html>
