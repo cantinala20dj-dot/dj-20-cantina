@@ -38,8 +38,9 @@ input.addEventListener("input", debounce(async () => {
       const li = document.createElement("li");
       li.textContent = `${track.name} — ${track.artist}`;
       li.addEventListener("click", () => {
-        input.value = track.name;
-        input.dataset.spotifyId = track.id;
+        input.value = track.name;                // mostramos solo la canción en el input
+        input.dataset.spotifyId = track.id;      // guardamos id
+        input.dataset.artist = track.artist;     // guardamos artista  << NUEVO
         suggestions.innerHTML = "";
       });
       suggestions.appendChild(li);
@@ -50,18 +51,25 @@ input.addEventListener("input", debounce(async () => {
 sendBtn.addEventListener("click", async () => {
   const song = input.value.trim();
   const spotifyId = input.dataset.spotifyId || null;
+  const artist = input.dataset.artist || "";     // << NUEVO
   if (!song) return;
 
   try {
     await addDoc(collection(db, "requests"), {
-      song, spotifyId,
+      song,
+      artist,               // << NUEVO
+      spotifyId,
       status: "pending",
-      unitId: BRAND.unitId,             // ← guarda la sucursal
+      unitId: BRAND.unitId,
       timestamp: serverTimestamp()
     });
     status.textContent = "✅ Enviado con éxito. ¡Dale like a nuestro Instagram!";
     if (window._toast) window._toast("✅ ¡Solicitud enviada!");
-    input.value = ""; input.dataset.spotifyId = ""; suggestions.innerHTML = "";
+
+    input.value = "";
+    input.dataset.spotifyId = "";
+    input.dataset.artist = "";                  // << NUEVO
+    suggestions.innerHTML = "";
   } catch (error) {
     status.textContent = "❌ Error al enviar, intenta de nuevo.";
     console.error(error);
