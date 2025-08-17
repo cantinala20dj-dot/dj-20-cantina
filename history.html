@@ -2,31 +2,29 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Historial de Solicitudes - DJ’ Cantina 20</title>
+  <title>Historial de Solicitudes — DJ’ Cantina 20</title>
 
-  <!-- Google Fonts + theme-color -->
+  <!-- Fuente y estilos base -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="theme-color" content="#111114">
-
   <link rel="stylesheet" href="style.css" />
+
   <style>
     body { font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial; }
     .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
-    table { border-collapse: collapse; width: 100%; max-width: 1000px; }
-    th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
-    th { background:#f4f4f4; text-align:left; }
-    .pill { padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
-    .pending{ background:#fff3cd; }
-    .played{ background:#d1e7dd; }
-    .rejected{ background:#f8d7da; }
-    #topSongs { margin:14px 0; }
-    #topSongs ol { margin:6px 0 0 20px; }
-    .badge{
-      margin-left:8px; font-weight:700; padding:2px 8px; border-radius:999px;
-      background:#20222b; border:1px solid #343648; display:inline-block;
-    }
+    table { border-collapse: collapse; width: 100%; max-width: 1100px; }
+    th, td { border: 1px solid #2a2b35; padding: 8px; font-size:14px }
+    th { background:#1b1c23; color:#e8e8ee; text-align:left }
+    .pill{ padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
+    .pending{ background:#3a2d12; color:#ffd89b; border:1px solid #5a4723 }
+    .played{ background:#16341f; color:#a9f0bf; border:1px solid #235d38 }
+    .rejected{ background:#4a1f25; color:#ffc7ce; border:1px solid #7a303d }
+    .badge{ margin-left:8px; font-weight:700; padding:2px 8px; border-radius:999px;
+            background:#20222b; border:1px solid #343648; display:inline-block }
+    #topSongs ol{ margin:6px 0 0 20px }
+    .muted{ color:#b3b3b9 }
   </style>
 </head>
 <body>
@@ -35,7 +33,7 @@
       <img id="logo" alt="Logo">
       <div>
         <h1 data-brand-name>DJ’ Cantina 20</h1>
-        <p style="color:#b3b3b9">Historial — Vista: <strong id="unitTag"></strong></p>
+        <p class="muted">Sucursal filtrada: <strong id="unitTag"></strong></p>
       </div>
     </header>
 
@@ -53,25 +51,25 @@
         <label>Hasta: <input type="date" id="toDate" /></label>
 
         <label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="legacyToggle" checked>
-          Incluir sin sucursal (legacy)
-        </label>
-
-        <label style="display:flex; align-items:center; gap:6px;">
           <input type="checkbox" id="groupToggle" checked>
           Agrupar duplicadas (🔥)
         </label>
 
-        <button id="clearFilters">Limpiar filtros</button>
-        <button id="exportCsv">Exportar CSV</button>
+        <button class="btn secondary" id="clearFilters">Limpiar filtros</button>
+        <button class="btn" id="exportCsv">Exportar CSV</button>
       </div>
 
-      <div id="topSongs"></div>
+      <div id="topSongs"><h3>Top 10 más pedidas</h3><p class="muted">Cargando…</p></div>
 
       <table>
         <thead>
           <tr id="theadRow">
-            <!-- Se ajusta dinámicamente -->
+            <th>Fecha/Hora</th>
+            <th>Canción</th>
+            <th>Artista</th>
+            <th>Spotify ID</th>
+            <th>Estado</th>
+            <th>Sucursal</th>
           </tr>
         </thead>
         <tbody id="historyBody"></tbody>
@@ -80,16 +78,24 @@
   </main>
 
   <script type="module">
-    const unitFromURL = new URLSearchParams(location.search).get('unit') || null;
-    const unitTagEl = document.getElementById('unitTag');
-    unitTagEl.textContent = unitFromURL ? `sucursal: ${unitFromURL}` : "todas las sucursales";
+    // === Config ===
+    const unitParam = new URLSearchParams(location.search).get('unit');
+    const UNIT = unitParam ? unitParam.toLowerCase() : null; // requerido
+    document.getElementById('unitTag').textContent = UNIT || "(falta ?unit=...)";
 
+    // Si no hay ?unit=, avisamos y no seguimos
+    if (!UNIT) {
+      document.getElementById('historyBody').innerHTML =
+        `<tr><td colspan="6" class="muted">Agrega ?unit=merida (por ejemplo) a la URL.</td></tr>`;
+      throw new Error("unit query param required");
+    }
+
+    // === Firebase ===
     const [{ initializeApp }, firestore] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"),
     ]);
-
-    const { getFirestore, collection, onSnapshot, orderBy, query } = firestore;
+    const { getFirestore, collection, onSnapshot, orderBy, query, where } = firestore;
 
     const firebaseConfig = {
       apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
@@ -99,86 +105,77 @@
       messagingSenderId: "777157429108",
       appId: "1:777157429108:web:de2efae209dcca67228e21"
     };
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
 
-    const appFB = initializeApp(firebaseConfig);
-    const db  = getFirestore(appFB);
-
+    // === DOM ===
     const statusFilter = document.getElementById("statusFilter");
     const fromDate = document.getElementById("fromDate");
     const toDate = document.getElementById("toDate");
     const clearBtn = document.getElementById("clearFilters");
     const exportBtn = document.getElementById("exportCsv");
     const groupToggle = document.getElementById("groupToggle");
-    const legacyToggle = document.getElementById("legacyToggle");
     const tbody = document.getElementById("historyBody");
     const topBox = document.getElementById("topSongs");
     const theadRow = document.getElementById("theadRow");
 
-    let allRows = [];
+    let all = [];
 
-    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+    // === Suscripción solo a la unidad solicitada ===
+    const q = query(
+      collection(db, "requests"),
+      where("unitId", "==", UNIT),
+      orderBy("timestamp", "desc")
+    );
     onSnapshot(q, (snap) => {
-      allRows = [];
+      all = [];
       snap.forEach(doc => {
         const d = doc.data();
-        allRows.push({
+        all.push({
           ts: toMillis(d.timestamp),
-          song: d.song || "",
-          artist: d.artist || "",         // << NUEVO
-          id: d.spotifyId || "",
+          song: (d.song||"").trim(),
+          artist: (d.artist||"").trim(),
+          id: (d.spotifyId||"").trim(),
           status: d.status || "pending",
-          unit: d.unitId || null
+          unit: d.unitId || UNIT
         });
       });
       render();
-    }, (err) => {
-      console.error("Snapshot error:", err);
-      onSnapshot(collection(db, "requests"), (snap2) => {
-        allRows = [];
+    }, err => {
+      console.error(err);
+      // Fallback sin orderBy (por si reglas de índice)
+      const q2 = query(collection(db, "requests"), where("unitId","==", UNIT));
+      onSnapshot(q2, (snap2)=>{
+        all = [];
         snap2.forEach(doc => {
           const d = doc.data();
-          allRows.push({
+          all.push({
             ts: toMillis(d.timestamp),
-            song: d.song || "",
-            artist: d.artist || "",       // << NUEVO
-            id: d.spotifyId || "",
+            song: (d.song||"").trim(),
+            artist: (d.artist||"").trim(),
+            id: (d.spotifyId||"").trim(),
             status: d.status || "pending",
-            unit: d.unitId || null
+            unit: d.unitId || UNIT
           });
         });
         render();
       });
     });
 
-    function toMillis(ts) {
-      if (!ts) return null;
-      if (typeof ts === "number") return ts;
-      if (ts instanceof Date) return ts.getTime();
-      if (typeof ts.toMillis === "function") return ts.toMillis();
+    function toMillis(ts){
+      if(!ts) return null;
+      if(typeof ts==="number") return ts;
+      if(typeof ts.toMillis==="function") return ts.toMillis();
+      if(ts instanceof Date) return ts.getTime();
       return null;
     }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 
-    function escapeHtml(str) {
-      return String(str ?? "").replace(/[&<>"']/g, s => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
-      }[s]));
-    }
-
-    function getFilteredRows() {
+    function getFiltered(){
       const sVal = statusFilter.value;
       const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
-      const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
-
-      return allRows.filter(r => {
-        if (unitFromURL) {
-          if (r.unit === unitFromURL) {
-            // ok
-          } else if (r.unit == null) {
-            if (!legacyToggle.checked) return false;
-          } else {
-            return false;
-          }
-        }
+      const toTs   = toDate.value   ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
+      return all.filter(r=>{
         if (sVal !== "all" && r.status !== sVal) return false;
         if (fromTs && (r.ts ?? 0) < fromTs) return false;
         if (toTs && (r.ts ?? 0) > toTs) return false;
@@ -187,20 +184,16 @@
     }
 
     // Agrupación por spotifyId; si no hay, por "canción|||artista"
-    function groupRows(rows) {
+    function groupRows(rows){
       const groups = new Map();
-      rows.forEach(r => {
-        const name = r.song ? String(r.song).trim() : "";
-        const artist = r.artist ? String(r.artist).trim() : "";
-        const keyBase = (r.id && String(r.id).trim()) || (name && artist ? `${name}|||${artist}` : name) || "";
+      rows.forEach(r=>{
+        const keyBase = r.id || (r.song && r.artist ? `${r.song}|||${r.artist}` : r.song) || "";
         const key = keyBase.toLowerCase();
         if (!key) return;
-
-        if (!groups.has(key)) {
+        if (!groups.has(key)){
           groups.set(key, {
-            song: r.song, artist: r.artist, id: r.id, unit: r.unit || "(sin sucursal)",
-            count: 0, lastTs: 0,
-            byStatus: { pending:0, played:0, rejected:0 }
+            song: r.song, artist: r.artist, id: r.id,
+            count: 0, lastTs: 0, byStatus: { pending:0, played:0, rejected:0 }
           });
         }
         const g = groups.get(key);
@@ -208,131 +201,118 @@
         g.lastTs = Math.max(g.lastTs || 0, r.ts || 0);
         g.byStatus[r.status] = (g.byStatus[r.status] || 0) + 1;
       });
-
       return Array.from(groups.values()).sort((a,b)=>{
-        const c = b.count - a.count;
-        if (c !== 0) return c;
+        const c = b.count - a.count; if (c!==0) return c;
         return (b.lastTs||0) - (a.lastTs||0);
       });
     }
 
-    function render() {
-      const rows = getFilteredRows();
+    function render(){
+      const rows = getFiltered();
       const grouped = groupToggle.checked;
 
-      if (grouped) {
-        theadRow.innerHTML = `
-          <th>Última vez</th>
-          <th>Canción — Artista</th>
-          <th>Spotify ID</th>
-          <th>Total / Pend-Rep-Rech</th>
-          <th>Sucursal</th>
-        `;
-      } else {
-        theadRow.innerHTML = `
-          <th>Fecha/Hora</th>
-          <th>Canción</th>
-          <th>Artista</th>
-          <th>Spotify ID</th>
-          <th>Estado</th>
-          <th>Sucursal</th>
-        `;
-      }
+      // Encabezados según modo
+      theadRow.innerHTML = grouped ? `
+        <th>Última vez</th>
+        <th>Canción — Artista</th>
+        <th>Spotify ID</th>
+        <th>Total / Pend-Rep-Rech</th>
+        <th>Sucursal</th>
+      ` : `
+        <th>Fecha/Hora</th>
+        <th>Canción</th>
+        <th>Artista</th>
+        <th>Spotify ID</th>
+        <th>Estado</th>
+        <th>Sucursal</th>
+      `;
 
       tbody.innerHTML = "";
 
-      if (grouped) {
+      if (grouped){
         const gs = groupRows(rows);
-        gs.forEach(g => {
+        // Top 10
+        topBox.innerHTML =
+          "<h3>Top 10 más pedidas</h3>" +
+          (gs.slice(0,10).length
+            ? "<ol>" + gs.slice(0,10).map(g=>`<li>${esc(g.song)} — ${esc(g.artist||"Artista desconocido")} — ${g.count}</li>`).join("") + "</ol>"
+            : "<p class='muted'>Sin datos</p>");
+
+        gs.forEach(g=>{
           const tr = document.createElement("tr");
           const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
           const summary = `${g.count} / ${g.byStatus.pending||0}-${g.byStatus.played||0}-${g.byStatus.rejected||0}`;
           tr.innerHTML = `
             <td>${dt}</td>
-            <td>${escapeHtml(g.song)} — ${escapeHtml(g.artist || "Artista desconocido")} ${g.count>1?`<span class="badge">🔥 x${g.count}</span>`:""}</td>
-            <td>${escapeHtml(g.id)}</td>
+            <td>${esc(g.song)} — ${esc(g.artist||"Artista desconocido")} ${g.count>1?`<span class="badge">🔥 x${g.count}</span>`:""}</td>
+            <td>${esc(g.id)}</td>
             <td>${summary}</td>
-            <td>${escapeHtml(g.unit || "(sin)")}</td>
+            <td>${esc(UNIT)}</td>
           `;
           tbody.appendChild(tr);
         });
-
-        // Top 10 (agrupado)
-        const top = gs.slice(0,10).map(g => [`${g.song} — ${g.artist||"Artista desconocido"}`, g.count]);
-        topBox.innerHTML =
-          "<h3>Top 10 más pedidas</h3>" +
-          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
 
       } else {
         // Detalle
-        rows.forEach(r => {
-          const tr = document.createElement("tr");
-          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-          tr.innerHTML = `
-            <td>${dt}</td>
-            <td>${escapeHtml(r.song)}</td>
-            <td>${escapeHtml(r.artist || "Artista desconocido")}</td>
-            <td>${escapeHtml(r.id)}</td>
-            <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
-            <td>${escapeHtml(r.unit || "(sin sucursal)")}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        // Top 10 (detalle)
         const counts = {};
-        rows.forEach(r => {
+        rows.forEach(r=>{
           const key = `${r.song} — ${r.artist||"Artista desconocido"}`;
           counts[key] = (counts[key]||0)+1;
         });
         const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
         topBox.innerHTML =
           "<h3>Top 10 más pedidas</h3>" +
-          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
+          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${esc(s)} — ${c}</li>`).join("") + "</ol>" : "<p class='muted'>Sin datos</p>");
+
+        rows.forEach(r=>{
+          const tr = document.createElement("tr");
+          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+          tr.innerHTML = `
+            <td>${dt}</td>
+            <td>${esc(r.song)}</td>
+            <td>${esc(r.artist||"Artista desconocido")}</td>
+            <td>${esc(r.id)}</td>
+            <td><span class="pill ${r.status}">${esc(r.status)}</span></td>
+            <td>${esc(UNIT)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
       }
     }
 
-    statusFilter.addEventListener("change", render);
-    fromDate.addEventListener("change", render);
-    toDate.addEventListener("change", render);
-    groupToggle.addEventListener("change", render);
-    legacyToggle.addEventListener("change", render);
-    clearBtn.addEventListener("click", () => {
-      statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
-    });
+    // Filtros
+    [statusFilter, fromDate, toDate, groupToggle].forEach(el=>el.addEventListener("change", render));
+    clearBtn.addEventListener("click", ()=>{ statusFilter.value="all"; fromDate.value=""; toDate.value=""; render(); });
 
-    // Exportar CSV (detalle/agrupado)
-    exportBtn.addEventListener("click", () => {
-      const rows = getFilteredRows();
+    // Export CSV
+    exportBtn.addEventListener("click", ()=>{
+      const rows = getFiltered();
       const grouped = groupToggle.checked;
 
-      function downloadCsv(csv, filename){
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      function dl(csv, name){
+        const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
+        const a = document.createElement("a"); a.href=url; a.download=name; a.click();
         URL.revokeObjectURL(url);
       }
 
-      if (grouped) {
+      if (grouped){
         const gs = groupRows(rows);
         const header = ["Última vez","Canción","Artista","Spotify ID","Total","Pendientes","Reproducidas","Rechazadas","Sucursal"];
-        const lines = gs.map(g => {
+        const lines = gs.map(g=>{
           const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
-          return [dt, g.song, g.artist||"", g.id, g.count, g.byStatus.pending||0, g.byStatus.played||0, g.byStatus.rejected||0, g.unit || "(sin)"]
-            .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
+          return [dt,g.song,g.artist||"",g.id,g.count,g.byStatus.pending||0,g.byStatus.played||0,g.byStatus.rejected||0,UNIT]
+                 .map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",");
         });
-        downloadCsv([header.join(","), ...lines].join("\n"),
-          `historial_grouped_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
+        dl([header.join(","),...lines].join("\n"), `historial_grouped_${UNIT}_${new Date().toISOString().slice(0,10)}.csv`);
       } else {
-        const header = ["Fecha/Hora","Canción","Artista","Spotify ID","Status","Sucursal"];
-        const lines = rows.map(r => {
+        const header = ["Fecha/Hora","Canción","Artista","Spotify ID","Estado","Sucursal"];
+        const lines = rows.map(r=>{
           const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-          return [dt, r.song, r.artist||"", r.id, r.status, r.unit || "(sin)"]
-            .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
+          return [dt,r.song,r.artist||"",r.id,r.status,UNIT]
+                 .map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",");
         });
-        downloadCsv([header.join(","), ...lines].join("\n"),
-          `historial_detalle_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
+        dl([header.join(","),...lines].join("\n"), `historial_detalle_${UNIT}_${new Date().toISOString().slice(0,10)}.csv`);
       }
     });
   </script>
