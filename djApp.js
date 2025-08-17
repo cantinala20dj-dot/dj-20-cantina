@@ -1,9 +1,10 @@
-// djApp.js — Panel del DJ (contraseña fija: Dj20cantina)
+// djApp.js — Panel del DJ con bloqueo por sucursal (password: Dj20cantina)
 
 import { BRAND } from "./branding.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import {
-  getFirestore, collection, query, where, onSnapshot, updateDoc, doc, getDoc
+  getFirestore, collection, query, where, onSnapshot,
+  updateDoc, doc, onSnapshot as onDocSnapshot
 } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
 // --- Firebase ---
@@ -22,13 +23,16 @@ const db = getFirestore(app);
 const loginBtn = document.getElementById("loginBtn");
 const djPass = document.getElementById("djPass");
 const requestsList = document.getElementById("requests");
+const unitId = (BRAND.unitId || "general");
 
-// Sugerido en dj.html para el input (por si no lo tienes):
-// <input type="password" id="djPass" placeholder="Contraseña DJ"
-//        style="flex:1;" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+// Banner opcional si lo agregaste en dj.html:
+// <div id="blockNotice" style="display:none;margin-bottom:10px;color:#ffb4b4">
+//   ⚠️ Panel bloqueado por el administrador para esta sucursal.
+// </div>
+const blockNotice = document.getElementById("blockNotice");
 
-// --- Utilidades ---
-function tsToMillis(ts) {
+// --- Utils ---
+function tsToMillis(ts){
   if (!ts) return 0;
   if (typeof ts === "number") return ts;
   if (ts instanceof Date) return ts.getTime();
@@ -36,36 +40,43 @@ function tsToMillis(ts) {
   return 0;
 }
 
-async function isUnitBlocked(unitId){
-  try {
-    const snap = await getDoc(doc(db, "units", unitId || "general"));
-    return snap.exists() && snap.data()?.blocked === true;
-  } catch(e){
-    console.error("units check error", e);
-    return false; // si falla la lectura, no bloquear
-  }
-}
+// --- 1) Escuchar en tiempo real el estado de bloqueo de la sucursal ---
+let isBlocked = false;
 
-// --- Login + escucha ---
+onDocSnapshot(doc(db, "units", unitId), (snap) => {
+  isBlocked = !!(snap.exists() && snap.data()?.blocked === true);
+  // UI
+  if (blockNotice) blockNotice.style.display = isBlocked ? "block" : "none";
+  loginBtn.disabled = isBlocked;
+  djPass.disabled = isBlocked;
+}, (err) => {
+  // Si hay error leyendo el doc, por seguridad NO bloqueamos el panel automáticamente.
+  console.error("Error leyendo units/"+unitId, err);
+  isBlocked = false;
+  if (blockNotice) blockNotice.style.display = "none";
+  loginBtn.disabled = false;
+  djPass.disabled = false;
+});
+
+// --- 2) Login y suscripción a solicitudes pendientes ---
 loginBtn.addEventListener("click", async () => {
-  // 1) Normaliza contraseña (evita espacios invisibles)
+  // Bloqueo activo → salir
+  if (isBlocked) {
+    alert(`Panel bloqueado para la sucursal: ${unitId}. Consulta al administrador.`);
+    return;
+  }
+
+  // Password robusta (recorta espacios)
   const val = (djPass.value || "").trim();
   if (val !== "Dj20cantina") {
     alert("Contraseña incorrecta");
     return;
   }
 
-  // 2) Bloqueo por sucursal
-  const blocked = await isUnitBlocked(BRAND.unitId);
-  if (blocked) {
-    alert(`Panel bloqueado para la sucursal: ${BRAND.unitId}. Consulta al administrador.`);
-    return;
-  }
-
-  // 3) Suscripción a solicitudes PENDIENTES para esta sucursal
+  // Suscribir a solicitudes PENDIENTES de esta sucursal
   const q = query(
     collection(db, "requests"),
-    where("unitId", "==", BRAND.unitId),
+    where("unitId", "==", unitId),
     where("status", "==", "pending")
   );
 
@@ -118,16 +129,15 @@ loginBtn.addEventListener("click", async () => {
       const li = document.createElement("li");
 
       // Título: Canción — Artista (ID opcional)
-      const title = document.createElement("span");
       const displayArtist = g.artist || "Artista desconocido";
+      const title = document.createElement("span");
       title.textContent = `${g.song} — ${displayArtist}${g.spotifyId ? ` (ID: ${g.spotifyId})` : ""}`;
 
-      // Badge 🔥 xN si hay duplicadas
+      // Badge 🔥 xN
       if (count > 1) {
         const badge = document.createElement("span");
         badge.className = "badge";
         badge.textContent = `🔥 x${count}`;
-        title.appendChild(document.createTextNode(" "));
         li.appendChild(title);
         li.appendChild(badge);
       } else {
