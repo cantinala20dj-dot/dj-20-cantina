@@ -2,7 +2,7 @@
 const BRAND = {
   name: "DJ’ Cantina 20",
   logo: "/logovideos.png", // coloca tu logo en /public/assets/logo.png
-  instagramUrl: "https://instagram.com/TU_INSTAGRAM", // editable
+  instagramUrl: "https://www.instagram.com/cantinaveinte",", // editable
   unitId: "general" // se puede sobrescribir con ?unit=sucursal1
 };
 
