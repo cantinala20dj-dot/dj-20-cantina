@@ -31,15 +31,17 @@ async function isUnitBlocked(unitId){
 }
 
 loginBtn.addEventListener("click", async () => {
-  // bloqueo por sucursal (opcional)
-  const blocked = await isUnitBlocked(BRAND.unitId);
-  if (blocked) {
-    alert(`Panel bloqueado para la sucursal: ${BRAND.unitId}. Consulta al administrador.`);
+  // Normaliza lo que el usuario escribió
+  const val = (djPass.value || "").trim();  // ← elimina espacios al inicio y final
+
+  // Comparación estricta, pero sin espacios de más
+  if (val !== "Dj20cantina") {
+    alert("Contraseña incorrecta");
     return;
   }
 
-  // contraseña del DJ
-  if (djPass.value !== "1985") return alert("Contraseña incorrecta");
+  // --- aquí sigue el código de snapshot, etc ---
+});
 
   // suscripción a solicitudes PENDIENTES de esta sucursal
   const q = query(
