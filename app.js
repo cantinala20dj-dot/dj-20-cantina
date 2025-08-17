@@ -1,5 +1,8 @@
+import { BRAND } from "./branding.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import {
+  getFirestore, collection, addDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
@@ -18,42 +21,31 @@ const suggestions = document.getElementById("suggestions");
 const sendBtn = document.getElementById("sendSong");
 const status = document.getElementById("status");
 
-function debounce(func, wait) {
-  let timeout;
-  return function (...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
-}
+// debounce
+function debounce(fn, wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), wait); } }
 
-input.addEventListener(
-  "input",
-  debounce(async () => {
-    const query = input.value.trim();
-    suggestions.innerHTML = "";
-    if (!query) return;
+input.addEventListener("input", debounce(async () => {
+  const query = input.value.trim();
+  suggestions.innerHTML = "";
+  if (!query) return;
 
-    try {
-      const res = await fetch(`/api/searchSpotify?q=${encodeURIComponent(query)}`);
-      const data = await res.json();
+  try {
+    const res = await fetch(`/api/searchSpotify?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) return;
 
-      if (!data.results || data.results.length === 0) return;
-
-      data.results.forEach(track => {
-        const li = document.createElement("li");
-        li.textContent = `${track.name} - ${track.artist}`;
-        li.addEventListener("click", () => {
-          input.value = track.name;
-          suggestions.innerHTML = "";
-          input.dataset.spotifyId = track.id;
-        });
-        suggestions.appendChild(li);
+    data.results.forEach(track => {
+      const li = document.createElement("li");
+      li.textContent = `${track.name} — ${track.artist}`;
+      li.addEventListener("click", () => {
+        input.value = track.name;
+        input.dataset.spotifyId = track.id;
+        suggestions.innerHTML = "";
       });
-    } catch (error) {
-      console.error(error);
-    }
-  }, 200)
-);
+      suggestions.appendChild(li);
+    });
+  } catch(e){ console.error(e); }
+}, 180));
 
 sendBtn.addEventListener("click", async () => {
   const song = input.value.trim();
@@ -62,15 +54,14 @@ sendBtn.addEventListener("click", async () => {
 
   try {
     await addDoc(collection(db, "requests"), {
-      song,
-      spotifyId,
+      song, spotifyId,
       status: "pending",
-      timestamp: Date.now()
+      unitId: BRAND.unitId,             // ← guarda la sucursal
+      timestamp: serverTimestamp()
     });
-    status.textContent = "✅ Se ha enviado con éxito. ¡Dale like a nuestro Instagram!";
-    input.value = "";
-    input.dataset.spotifyId = "";
-    suggestions.innerHTML = "";
+    status.textContent = "✅ Enviado con éxito. ¡Dale like a nuestro Instagram!";
+    if (window._toast) window._toast("✅ ¡Solicitud enviada!");
+    input.value = ""; input.dataset.spotifyId = ""; suggestions.innerHTML = "";
   } catch (error) {
     status.textContent = "❌ Error al enviar, intenta de nuevo.";
     console.error(error);
