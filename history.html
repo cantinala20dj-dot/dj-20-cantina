@@ -2,31 +2,39 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Historial de Solicitudes - DJ’ Cantina 20</title>
+  <title>Historial por Sucursal — DJ’ Cantina 20</title>
 
-  <!-- Google Fonts + theme-color -->
+  <!-- Fuente y estilos base que ya usas -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <meta name="theme-color" content="#111114">
-
   <link rel="stylesheet" href="style.css" />
+
   <style>
     body { font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial; }
     .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
-    table { border-collapse: collapse; width: 100%; max-width: 1000px; }
-    th, td { border: 1px solid #ddd; padding: 8px; font-size:14px; }
-    th { background:#f4f4f4; text-align:left; }
-    .pill { padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
-    .pending{ background:#fff3cd; }
-    .played{ background:#d1e7dd; }
-    .rejected{ background:#f8d7da; }
-    #topSongs { margin:14px 0; }
-    #topSongs ol { margin:6px 0 0 20px; }
-    .badge{
-      margin-left:8px; font-weight:700; padding:2px 8px; border-radius:999px;
-      background:#20222b; border:1px solid #343648; display:inline-block;
+    .grid { display:grid; gap:14px; }
+    /* En móviles 2 columnas, tablets 3, desktop 4-6 */
+    .grid { grid-template-columns: repeat(2, minmax(220px,1fr)); }
+    @media (min-width: 900px){ .grid{ grid-template-columns: repeat(4, minmax(240px,1fr)); } }
+    @media (min-width: 1200px){ .grid{ grid-template-columns: repeat(6, minmax(240px,1fr)); } }
+
+    .col {
+      background:#15161d; border:1px solid #2b2c36; border-radius:12px; padding:12px;
+      min-height: 220px;
     }
+    .col h3 { margin:0 0 8px 0; font-size:16px; display:flex; justify-content:space-between; align-items:center; }
+    .count { font-size:12px; color:#b8bac7 }
+    .item { border-top:1px solid #23242e; padding:8px 0; font-size:13px }
+    .item:first-of-type{ border-top:none; }
+    .muted { color:#b8bac7 }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:6px }
+    .pending{ background:#3a2d12; color:#ffd89b; border:1px solid #5a4723 }
+    .played{ background:#16341f; color:#a9f0bf; border:1px solid #235d38 }
+    .rejected{ background:#4a1f25; color:#ffc7ce; border:1px solid #7a303d }
+    .id { color:#8ea0ff; font-size:11px; word-break: break-all; }
+    .topbox { margin: 12px 0 0; font-size:13px }
+    .topbox ol { margin:6px 0 0 18px; }
   </style>
 </head>
 <body>
@@ -35,7 +43,7 @@
       <img id="logo" alt="Logo">
       <div>
         <h1 data-brand-name>DJ’ Cantina 20</h1>
-        <p style="color:#b3b3b9">Historial — Vista: <strong id="unitTag"></strong></p>
+        <p class="muted">Historial por sucursal (vista rápida en columnas)</p>
       </div>
     </header>
 
@@ -51,52 +59,24 @@
         </label>
         <label>Desde: <input type="date" id="fromDate" /></label>
         <label>Hasta: <input type="date" id="toDate" /></label>
-
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="legacyToggle" checked>
-          Incluir sin sucursal (legacy)
-        </label>
-
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="groupToggle" checked>
-          Agrupar duplicadas (🔥)
-        </label>
-
-        <button id="clearFilters">Limpiar filtros</button>
-        <button id="exportCsv">Exportar CSV</button>
+        <button class="btn" id="clearBtn">Limpiar filtros</button>
       </div>
 
-      <div id="topSongs"></div>
+      <!-- Contenedor de columnas -->
+      <div id="cols" class="grid"></div>
 
-      <table>
-        <thead>
-          <!-- Encabezados fijos para evitar “tabla sin columnas” -->
-          <tr id="theadRow">
-            <th>Fecha/Hora</th>
-            <th>Canción</th>
-            <th>Artista</th>
-            <th>Spotify ID</th>
-            <th>Estado</th>
-            <th>Sucursal</th>
-          </tr>
-        </thead>
-        <tbody id="historyBody"></tbody>
-      </table>
+      <!-- Top global (según filtros) -->
+      <div id="topGlobal" class="topbox"></div>
     </section>
   </main>
 
+  <!-- Branding y Firebase -->
+  <script type="module" src="branding.js"></script>
   <script type="module">
-    // Normaliza unidad a minúsculas
-    const paramUnit = new URLSearchParams(location.search).get('unit');
-    const unitFromURL = paramUnit ? paramUnit.toLowerCase() : null;
-    document.getElementById('unitTag').textContent = unitFromURL ? `sucursal: ${unitFromURL}` : "todas las sucursales";
-
-    const [{ initializeApp }, firestore] = await Promise.all([
-      import("https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"),
-    ]);
-
-    const { getFirestore, collection, onSnapshot, orderBy, query } = firestore;
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import {
+      getFirestore, collection, onSnapshot, orderBy, query
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
@@ -107,234 +87,139 @@
       appId: "1:777157429108:web:de2efae209dcca67228e21"
     };
 
-    const appFB = initializeApp(firebaseConfig);
-    const db  = getFirestore(appFB);
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
 
+    // Sucursales definidas (IDs tal como guardas en unitId)
+    const UNITS = [
+      "polanco","reforma","antara","santa-fe","satelite","metepec",
+      "artz","monterrey","guadalajara","cancun","merida","wtc"
+    ];
+
+    // DOM
+    const colsEl = document.getElementById("cols");
     const statusFilter = document.getElementById("statusFilter");
     const fromDate = document.getElementById("fromDate");
-    const toDate = document.getElementById("toDate");
-    const clearBtn = document.getElementById("clearFilters");
-    const exportBtn = document.getElementById("exportCsv");
-    const groupToggle = document.getElementById("groupToggle");
-    const legacyToggle = document.getElementById("legacyToggle");
-    const tbody = document.getElementById("historyBody");
-    const topBox = document.getElementById("topSongs");
-    const theadRow = document.getElementById("theadRow");
+    const toDate   = document.getElementById("toDate");
+    const clearBtn = document.getElementById("clearBtn");
+    const topGlobal = document.getElementById("topGlobal");
 
-    let allRows = [];
+    let all = []; // todas las solicitudes
 
-    // Suscripción: orden por timestamp desc (y fallback sin orderBy si falla)
-    try {
-      const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-      onSnapshot(q, snap => { collect(snap); render(); });
-    } catch {
-      onSnapshot(collection(db, "requests"), snap => { collect(snap); render(); });
-    }
-
-    function collect(snap){
-      allRows = [];
+    // Suscripción en tiempo real
+    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+    onSnapshot(q, (snap) => {
+      all = [];
       snap.forEach(doc => {
         const d = doc.data();
-        allRows.push({
+        all.push({
           ts: toMillis(d.timestamp),
-          song: (d.song || "").trim(),
-          artist: (d.artist || "").trim(),
-          id: (d.spotifyId || "").trim(),
+          song: (d.song||"").trim(),
+          artist: (d.artist||"").trim(),
+          id: (d.spotifyId||"").trim(),
           status: d.status || "pending",
-          unit: d.unitId ? String(d.unitId).toLowerCase() : null
+          unit: d.unitId ? String(d.unitId).toLowerCase() : "(sin)"
         });
       });
-    }
+      render();
+    });
 
-    function toMillis(ts) {
-      if (!ts) return null;
-      if (typeof ts === "number") return ts;
-      if (ts instanceof Date) return ts.getTime();
-      if (typeof ts.toMillis === "function") return ts.toMillis();
-      return null;
-    }
+    function toMillis(ts){ if(!ts) return null; if(typeof ts==="number") return ts; if(typeof ts.toMillis==="function") return ts.toMillis(); if(ts instanceof Date) return ts.getTime(); return null; }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+    function nice(unit){ if(unit==="(sin)") return "(sin sucursal)"; return unit.replace(/-/g," ").replace(/\b\w/g,m=>m.toUpperCase()); }
 
-    function escapeHtml(str) {
-      return String(str ?? "").replace(/[&<>"']/g, s => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
-      }[s]));
-    }
-
-    function getFilteredRows() {
-      const sVal = statusFilter.value;
+    function getFiltered(){
+      const s = statusFilter.value;
       const fromTs = fromDate.value ? new Date(fromDate.value).getTime() : null;
-      const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
+      const toTs   = toDate.value   ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
 
-      return allRows.filter(r => {
-        // Filtrado por unidad:
-        if (unitFromURL) {
-          if (r.unit === unitFromURL) {
-            // ok
-          } else if (r.unit == null) {
-            if (!legacyToggle.checked) return false; // oculta legacy si desmarcas
-          } else {
-            return false; // otra unidad → fuera
-          }
-        }
-        // Estado
-        if (sVal !== "all" && r.status !== sVal) return false;
-        // Fechas
+      return all.filter(r=>{
+        if (s !== "all" && r.status !== s) return false;
         if (fromTs && (r.ts ?? 0) < fromTs) return false;
         if (toTs && (r.ts ?? 0) > toTs) return false;
         return true;
       });
     }
 
-    // Agrupación por spotifyId; si no hay, por "canción|||artista"
-    function groupRows(rows) {
-      const groups = new Map();
-      rows.forEach(r => {
-        const name = r.song;
-        const artist = r.artist;
-        const keyBase = (r.id) || (name && artist ? `${name}|||${artist}` : name) || "";
-        const key = keyBase.toLowerCase();
-        if (!key) return;
+    function groupByUnit(rows){
+      const map = new Map();
+      // Inicializa todas las unidades (para que siempre salgan columnas)
+      UNITS.forEach(u => map.set(u, []));
+      map.set("(sin)", []); // columna extra para legacy
 
-        if (!groups.has(key)) {
-          groups.set(key, {
-            song: r.song, artist: r.artist, id: r.id, unit: r.unit || "(sin sucursal)",
-            count: 0, lastTs: 0,
-            byStatus: { pending:0, played:0, rejected:0 }
+      rows.forEach(r=>{
+        const u = map.has(r.unit) ? r.unit : (r.unit || "(sin)");
+        map.get(u).push(r);
+      });
+      return map;
+    }
+
+    function topCounts(rows, limit=10){
+      const m = new Map();
+      rows.forEach(r=>{
+        const key = (r.id || `${r.song}|||${r.artist}` || r.song).toLowerCase();
+        if (!key) return;
+        const prev = m.get(key) || { name: `${r.song} — ${r.artist||"Artista desconocido"}`, count:0 };
+        prev.count += 1; m.set(key, prev);
+      });
+      return Array.from(m.values()).sort((a,b)=>b.count-a.count).slice(0,limit);
+    }
+
+    function render(){
+      const rows = getFiltered();
+      const byUnit = groupByUnit(rows);
+
+      colsEl.innerHTML = "";
+
+      // Render por unidad (columna)
+      Array.from(byUnit.entries()).forEach(([unit, list])=>{
+        const col = document.createElement("div");
+        col.className = "col";
+
+        // Header columna
+        const h3 = document.createElement("h3");
+        const title = document.createElement("span");
+        title.textContent = nice(unit);
+        const count = document.createElement("span");
+        count.className = "count";
+        count.textContent = `${list.length} req`;
+        h3.appendChild(title); h3.appendChild(count);
+        col.appendChild(h3);
+
+        if (list.length === 0){
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "Sin solicitudes";
+          col.appendChild(p);
+        } else {
+          // Render items (máx 50 por columna para no hacerla infinita)
+          list.slice(0,50).forEach(r=>{
+            const d = document.createElement("div");
+            d.className = "item";
+            const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
+            d.innerHTML = `
+              <div>${esc(r.song)} — ${esc(r.artist || "Artista desconocido")}</div>
+              ${r.id ? `<div class="id">${esc(r.id)}</div>` : ``}
+              <div class="muted">${dt} <span class="pill ${r.status}">${esc(r.status)}</span></div>
+            `;
+            col.appendChild(d);
           });
         }
-        const g = groups.get(key);
-        g.count += 1;
-        g.lastTs = Math.max(g.lastTs || 0, r.ts || 0);
-        g.byStatus[r.status] = (g.byStatus[r.status] || 0) + 1;
+
+        colsEl.appendChild(col);
       });
 
-      return Array.from(groups.values()).sort((a,b)=>{
-        const c = b.count - a.count;
-        if (c !== 0) return c;
-        return (b.lastTs||0) - (a.lastTs||0);
-      });
+      // Top global
+      const top = topCounts(rows, 10);
+      topGlobal.innerHTML =
+        "<h3>Top 10 global (según filtros)</h3>" +
+        (top.length ? "<ol>" + top.map(t=>`<li>${esc(t.name)} — ${t.count}</li>`).join("") + "</ol>"
+                    : "<p class='muted'>Sin datos</p>");
     }
 
-    function render() {
-      const rows = getFilteredRows();
-      const grouped = groupToggle.checked;
-
-      // Ajusta encabezados según modo
-      if (grouped) {
-        theadRow.innerHTML = `
-          <th>Última vez</th>
-          <th>Canción — Artista</th>
-          <th>Spotify ID</th>
-          <th>Total / Pend-Rep-Rech</th>
-          <th>Sucursal</th>
-        `;
-      } else {
-        theadRow.innerHTML = `
-          <th>Fecha/Hora</th>
-          <th>Canción</th>
-          <th>Artista</th>
-          <th>Spotify ID</th>
-          <th>Estado</th>
-          <th>Sucursal</th>
-        `;
-      }
-
-      tbody.innerHTML = "";
-
-      if (grouped) {
-        const gs = groupRows(rows);
-        gs.forEach(g => {
-          const tr = document.createElement("tr");
-          const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
-          const summary = `${g.count} / ${g.byStatus.pending||0}-${g.byStatus.played||0}-${g.byStatus.rejected||0}`;
-          tr.innerHTML = `
-            <td>${dt}</td>
-            <td>${escapeHtml(g.song)} — ${escapeHtml(g.artist || "Artista desconocido")} ${g.count>1?`<span class="badge">🔥 x${g.count}</span>`:""}</td>
-            <td>${escapeHtml(g.id)}</td>
-            <td>${summary}</td>
-            <td>${escapeHtml(g.unit || "(sin)")}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        // Top 10 (agrupado)
-        const top = gs.slice(0,10).map(g => [`${g.song} — ${g.artist||"Artista desconocido"}`, g.count]);
-        topBox.innerHTML =
-          "<h3>Top 10 más pedidas</h3>" +
-          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
-
-      } else {
-        // Detalle
-        rows.forEach(r => {
-          const tr = document.createElement("tr");
-          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-          tr.innerHTML = `
-            <td>${dt}</td>
-            <td>${escapeHtml(r.song)}</td>
-            <td>${escapeHtml(r.artist || "Artista desconocido")}</td>
-            <td>${escapeHtml(r.id)}</td>
-            <td><span class="pill ${r.status}">${escapeHtml(r.status)}</span></td>
-            <td>${escapeHtml(r.unit || "(sin sucursal)")}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        // Top 10 (detalle)
-        const counts = {};
-        rows.forEach(r => {
-          const key = `${r.song} — ${r.artist||"Artista desconocido"}`;
-          counts[key] = (counts[key]||0)+1;
-        });
-        const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-        topBox.innerHTML =
-          "<h3>Top 10 más pedidas</h3>" +
-          (top.length ? "<ol>" + top.map(([s,c])=>`<li>${escapeHtml(s)} — ${c}</li>`).join("") + "</ol>" : "<p>Sin datos</p>");
-      }
-    }
-
-    statusFilter.addEventListener("change", render);
-    fromDate.addEventListener("change", render);
-    toDate.addEventListener("change", render);
-    groupToggle.addEventListener("change", render);
-    legacyToggle.addEventListener("change", render);
-    clearBtn.addEventListener("click", () => {
-      statusFilter.value = "all"; fromDate.value = ""; toDate.value = ""; render();
-    });
-
-    // Exportar CSV (detalle/agrupado)
-    exportBtn.addEventListener("click", () => {
-      const rows = getFilteredRows();
-      const grouped = groupToggle.checked;
-
-      function downloadCsv(csv, filename){
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      if (grouped) {
-        const gs = groupRows(rows);
-        const header = ["Última vez","Canción","Artista","Spotify ID","Total","Pendientes","Reproducidas","Rechazadas","Sucursal"];
-        const lines = gs.map(g => {
-          const dt = g.lastTs ? new Date(g.lastTs).toLocaleString() : "-";
-          return [dt, g.song, g.artist||"", g.id, g.count, g.byStatus.pending||0, g.byStatus.played||0, g.byStatus.rejected||0, g.unit || "(sin)"]
-            .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
-        });
-        downloadCsv([header.join(","), ...lines].join("\n"),
-          `historial_grouped_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
-      } else {
-        const header = ["Fecha/Hora","Canción","Artista","Spotify ID","Status","Sucursal"];
-        const lines = rows.map(r => {
-          const dt = r.ts ? new Date(r.ts).toLocaleString() : "-";
-          return [dt, r.song, r.artist||"", r.id, r.status, r.unit || "(sin)"]
-            .map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",");
-        });
-        downloadCsv([header.join(","), ...lines].join("\n"),
-          `historial_detalle_${unitFromURL||"todas"}_${new Date().toISOString().slice(0,10)}.csv`);
-      }
-    });
+    // Eventos filtros
+    [statusFilter, fromDate, toDate].forEach(el => el.addEventListener("change", render));
+    clearBtn.addEventListener("click", ()=>{ statusFilter.value="all"; fromDate.value=""; toDate.value=""; render(); });
   </script>
 </body>
 </html>
