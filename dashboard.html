@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard Global — DJ’ Cantina 20</title>
+
+  <!-- Tipografía y color del navegador -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#111114">
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Ajustes mínimos del layout del dashboard */
+    .gate { max-width: 360px; margin: 60px auto; border:1px solid #2b2c36; padding:20px; border-radius:12px; background:#15161d }
+    .gate h2 { margin-top:0 }
+    .gate input { width:100%; padding:12px; margin:10px 0; border-radius:10px; border:1px solid #2b2c36; background:#101117; color:#fff }
+
+    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
+    .grid { display:grid; gap:14px; grid-template-columns: 1fr; }
+    @media (min-width: 900px){ .grid{ grid-template-columns: 1fr 1fr; } }
+
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #23242e; padding: 8px; font-size:14px; }
+    th { background:#191a21; color:#e8e8ee; text-align:left; }
+    details summary { cursor:pointer; color:#f3f3f5; }
+    .muted { color:#b8bac7; font-size:13px }
+    .small { font-size:12px; }
+    canvas { background:#15161d; border:1px solid #2b2c36; border-radius:12px; padding:8px }
+  </style>
+
+  <!-- Chart.js para una gráfica sencilla -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Pantalla de acceso (solo para el dashboard) -->
+  <div id="gate" class="gate">
+    <h2>Acceso al Dashboard Global</h2>
+    <p class="muted">Introduce la contraseña del dueño para ver estadísticas.</p>
+    <input type="password" id="dashPass" placeholder="Contraseña (1985)" />
+    <button class="btn" id="enterBtn">Entrar</button>
+    <p id="gateMsg" style="color:#ffb4b4; margin:8px 0 0 0;"></p>
+  </div>
+
+  <!-- Contenido del Dashboard -->
+  <main id="app" class="container" style="display:none">
+    <header class="header">
+      <img id="logo" alt="Logo">
+      <div>
+        <h1 data-brand-name>DJ’ Cantina 20</h1>
+        <p class="muted">Dashboard Global — vista del dueño</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="toolbar">
+        <label>Estado:
+          <select id="statusFilter">
+            <option value="all">Todos</option>
+            <option value="pending">Pendientes</option>
+            <option value="played">Reproducidas</option>
+            <option value="rejected">Rechazadas</option>
+          </select>
+        </label>
+        <label>Desde: <input type="date" id="fromDate" /></label>
+        <label>Hasta: <input type="date" id="toDate" /></label>
+        <button class="btn" id="clearFilters">Limpiar filtros</button>
+        <button class="btn secondary" id="exportCsv">Exportar CSV</button>
+      </div>
+
+      <div class="grid">
+        <div>
+          <h3>Totales por sucursal</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Sucursal</th>
+                <th class="small">Pend</th>
+                <th class="small">Rep</th>
+                <th class="small">Rech</th>
+                <th>Total</th>
+                <th>Historial</th>
+              </tr>
+            </thead>
+            <tbody id="totalsBody"></tbody>
+          </table>
+
+          <details style="margin-top:12px">
+            <summary><strong>Top 5 por sucursal</strong> (click para expandir)</summary>
+            <div id="topByUnit" class="small" style="margin-top:8px"></div>
+          </details>
+        </div>
+
+        <div>
+          <h3>Distribución por sucursal</h3>
+          <canvas id="unitsChart" height="260"></canvas>
+
+          <div id="topGlobal" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- JS -->
+  <script type="module" src="branding.js"></script>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
