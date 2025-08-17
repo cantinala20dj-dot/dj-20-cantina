@@ -2,16 +2,52 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>DJ Cantina 20 - Pide tu canción</title>
+  <title>DJ’ Cantina 20 — Pide tu canción</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>DJ Cantina 20 - Pide tu canción</h1>
-  <input type="text" id="songSearch" placeholder="Escribe tu canción..." autocomplete="off" />
-  <ul id="suggestions"></ul>
-  <button id="sendSong">Enviar canción</button>
-  <p id="status"></p>
+  <main class="container">
+    <header class="header">
+      <img id="logo" alt="Logo">
+      <div>
+        <h1 data-brand-name>DJ’ Cantina 20</h1>
+        <p>Solicita tu canción — sucursal: <strong id="unitTag">general</strong></p>
+      </div>
+    </header>
 
+    <section class="card">
+      <div class="input-row">
+        <input type="text" id="songSearch" placeholder="Escribe tu canción o artista… (búsqueda Spotify)" autocomplete="off" />
+        <ul id="suggestions"></ul>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn" id="sendSong">Enviar canción</button>
+        <a class="btn secondary" data-ig target="_blank" rel="noopener">❤️ Síguenos en Instagram</a>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <div class="footer">
+      <span>Powered by Spotify + Firebase</span>
+      <a href="dj.html">🎧 Panel del DJ</a>
+    </div>
+  </main>
+
+  <div class="toast" id="toast">✅ ¡Solicitud enviada!</div>
+
+  <!-- JS -->
+  <script type="module" src="branding.js"></script>
   <script type="module" src="app.js"></script>
+  <script>
+    // UI: toast de éxito
+    function toast(msg){
+      const t=document.getElementById('toast'); t.textContent=msg||'Listo'; t.classList.add('show');
+      setTimeout(()=>t.classList.remove('show'), 1800);
+    }
+    window._toast = toast;
+    // muestra el unit actual
+    const p = new URLSearchParams(location.search);
+    document.getElementById('unitTag').textContent = p.get('unit') || 'general';
+  </script>
 </body>
 </html>
