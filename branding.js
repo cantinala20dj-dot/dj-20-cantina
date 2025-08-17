@@ -1,18 +1,17 @@
-// branding.js — Configuración de marca y sucursal
+// branding.js
 const BRAND = {
   name: "DJ’ Cantina 20",
-  logo: "/logovideos.png", // coloca tu logo en /public/assets/logo.png
-  instagramUrl: "https://www.instagram.com/cantinaveinte",
-  unitId: "general" // se puede sobrescribir con ?unit=sucursal1
+  logo: "logovideos.png",
+  instagramUrl: "https://www.instagram.com/cantinaveinte", // IG oficial fijo
+  unitId: "general"
 };
 
 (function initBrand() {
-  // Permite override por querystring: ?unit=sucursal1&ig=https://instagram.com/mi_ig
   const p = new URLSearchParams(location.search);
   if (p.get("unit")) BRAND.unitId = p.get("unit");
+  // Solo cambia IG si explícitamente pasas ?ig=...
   if (p.get("ig")) BRAND.instagramUrl = p.get("ig");
 
-  // Aplica nombre y logo si existen en el DOM
   document.addEventListener("DOMContentLoaded", () => {
     const nameEls = document.querySelectorAll("[data-brand-name]");
     nameEls.forEach(el => (el.textContent = BRAND.name));
@@ -20,8 +19,15 @@ const BRAND = {
     const logoEl = document.getElementById("logo");
     if (logoEl) logoEl.src = BRAND.logo;
 
-    const igLinks = document.querySelectorAll("a[data-ig]");
-    igLinks.forEach(a => (a.href = BRAND.instagramUrl));
+    // Aplica IG definitivo a todos los enlaces con data-ig
+    document.querySelectorAll("a[data-ig]").forEach(a => {
+      a.href = BRAND.instagramUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+    });
+
+    const unitEl = document.getElementById("unitTag");
+    if (unitEl) unitEl.textContent = BRAND.unitId || "general";
   });
 })();
 export { BRAND };
