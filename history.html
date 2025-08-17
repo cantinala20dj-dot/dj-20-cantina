@@ -11,12 +11,35 @@
   <meta name="theme-color" content="#111114">
   <link rel="stylesheet" href="style.css" />
 
+  <!-- Parche de UX: scroll, sticky toolbar, thead fijo -->
   <style>
     body { font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-    .toolbar { display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap: wrap; }
-    table { border-collapse: collapse; width: 100%; max-width: 1100px; }
+    /* Anula el centrado vertical global para permitir scroll natural */
+    body{ align-items:flex-start; justify-content:flex-start; }
+
+    /* Contenedor más ancho para ver más columnas */
+    .container{ max-width: 1200px; }
+
+    /* Barra de filtros pegada arriba y clickeable */
+    .toolbar{
+      position: sticky; top: 0; z-index: 10;
+      background: var(--card); padding: 8px; border-radius: 10px; border:1px solid #2a2b35;
+      margin-bottom: 12px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;
+    }
+
+    /* Contenedor scrolleable solo para la tabla */
+    .table-scroller{
+      max-height: 70vh; overflow: auto; border-radius: 12px; border:1px solid #2a2b35;
+      background: var(--card);
+    }
+
+    table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #2a2b35; padding: 8px; font-size:14px }
-    th { background:#1b1c23; color:#e8e8ee; text-align:left }
+    thead th{
+      position: sticky; top: 0; z-index: 2;
+      background:#1b1c23; color:#e8e8ee; text-align:left;
+    }
+
     .pill{ padding:2px 8px; border-radius:999px; font-size:12px; display:inline-block }
     .pending{ background:#3a2d12; color:#ffd89b; border:1px solid #5a4723 }
     .played{ background:#16341f; color:#a9f0bf; border:1px solid #235d38 }
@@ -30,7 +53,7 @@
 <body>
   <main class="container">
     <header class="header">
-      <img id="logo" alt="Logo">
+      <img id="logo" alt="logovideos.png">
       <div>
         <h1 data-brand-name>DJ’ Cantina 20</h1>
         <p class="muted">Sucursal filtrada: <strong id="unitTag"></strong></p>
@@ -38,6 +61,7 @@
     </header>
 
     <section class="card">
+      <!-- Toolbar sticky -->
       <div class="toolbar">
         <label>Estado:
           <select id="statusFilter">
@@ -55,35 +79,38 @@
           Agrupar duplicadas (🔥)
         </label>
 
-        <button class="btn secondary" id="clearFilters">Limpiar filtros</button>
-        <button class="btn" id="exportCsv">Exportar CSV</button>
+        <button class="btn secondary" id="clearFilters" type="button">Limpiar filtros</button>
+        <button class="btn" id="exportCsv" type="button">Exportar CSV</button>
       </div>
 
       <div id="topSongs"><h3>Top 10 más pedidas</h3><p class="muted">Cargando…</p></div>
 
-      <table>
-        <thead>
-          <tr id="theadRow">
-            <th>Fecha/Hora</th>
-            <th>Canción</th>
-            <th>Artista</th>
-            <th>Spotify ID</th>
-            <th>Estado</th>
-            <th>Sucursal</th>
-          </tr>
-        </thead>
-        <tbody id="historyBody"></tbody>
-      </table>
+      <!-- Tabla con scroll propio y thead fijo -->
+      <div class="table-scroller">
+        <table>
+          <thead>
+            <tr id="theadRow">
+              <th>Fecha/Hora</th>
+              <th>Canción</th>
+              <th>Artista</th>
+              <th>Spotify ID</th>
+              <th>Estado</th>
+              <th>Sucursal</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 
   <script type="module">
     // === Config ===
     const unitParam = new URLSearchParams(location.search).get('unit');
-    const UNIT = unitParam ? unitParam.toLowerCase() : null; // requerido
+    const UNIT = unitParam ? unitParam.toLowerCase() : null;
     document.getElementById('unitTag').textContent = UNIT || "(falta ?unit=...)";
 
-    // Si no hay ?unit=, avisamos y no seguimos
+    // Si no hay ?unit=, avisamos y paramos
     if (!UNIT) {
       document.getElementById('historyBody').innerHTML =
         `<tr><td colspan="6" class="muted">Agrega ?unit=merida (por ejemplo) a la URL.</td></tr>`;
@@ -143,7 +170,7 @@
       render();
     }, err => {
       console.error(err);
-      // Fallback sin orderBy (por si reglas de índice)
+      // Fallback sin orderBy (por si índices)
       const q2 = query(collection(db, "requests"), where("unitId","==", UNIT));
       onSnapshot(q2, (snap2)=>{
         all = [];
