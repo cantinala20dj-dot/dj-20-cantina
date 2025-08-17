@@ -60,4 +60,13 @@ input[type="text"]:focus{border-color:#3b3d49; box-shadow:0 0 0 3px rgba(255,62,
 /* Ocultar link "Panel del DJ" en la home */
 .footer a[href="dj.html"] { display: none; }
 
+.badge{
+  margin-left:8px;
+  font-weight:700;
+  padding:2px 8px;
+  border-radius:999px;
+  background:#20222b;
+  border:1px solid #343648;
+  display:inline-block;
+}
 
