@@ -70,8 +70,14 @@
 
       <table>
         <thead>
+          <!-- Encabezados fijos para evitar “tabla sin columnas” -->
           <tr id="theadRow">
-            <!-- Se ajusta dinámicamente -->
+            <th>Fecha/Hora</th>
+            <th>Canción</th>
+            <th>Artista</th>
+            <th>Spotify ID</th>
+            <th>Estado</th>
+            <th>Sucursal</th>
           </tr>
         </thead>
         <tbody id="historyBody"></tbody>
@@ -80,9 +86,10 @@
   </main>
 
   <script type="module">
-    const unitFromURL = new URLSearchParams(location.search).get('unit') || null;
-    const unitTagEl = document.getElementById('unitTag');
-    unitTagEl.textContent = unitFromURL ? `sucursal: ${unitFromURL}` : "todas las sucursales";
+    // Normaliza unidad a minúsculas
+    const paramUnit = new URLSearchParams(location.search).get('unit');
+    const unitFromURL = paramUnit ? paramUnit.toLowerCase() : null;
+    document.getElementById('unitTag').textContent = unitFromURL ? `sucursal: ${unitFromURL}` : "todas las sucursales";
 
     const [{ initializeApp }, firestore] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"),
@@ -116,39 +123,28 @@
 
     let allRows = [];
 
-    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-    onSnapshot(q, (snap) => {
+    // Suscripción: orden por timestamp desc (y fallback sin orderBy si falla)
+    try {
+      const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+      onSnapshot(q, snap => { collect(snap); render(); });
+    } catch {
+      onSnapshot(collection(db, "requests"), snap => { collect(snap); render(); });
+    }
+
+    function collect(snap){
       allRows = [];
       snap.forEach(doc => {
         const d = doc.data();
         allRows.push({
           ts: toMillis(d.timestamp),
-          song: d.song || "",
-          artist: d.artist || "",         // << NUEVO
-          id: d.spotifyId || "",
+          song: (d.song || "").trim(),
+          artist: (d.artist || "").trim(),
+          id: (d.spotifyId || "").trim(),
           status: d.status || "pending",
-          unit: d.unitId || null
+          unit: d.unitId ? String(d.unitId).toLowerCase() : null
         });
       });
-      render();
-    }, (err) => {
-      console.error("Snapshot error:", err);
-      onSnapshot(collection(db, "requests"), (snap2) => {
-        allRows = [];
-        snap2.forEach(doc => {
-          const d = doc.data();
-          allRows.push({
-            ts: toMillis(d.timestamp),
-            song: d.song || "",
-            artist: d.artist || "",       // << NUEVO
-            id: d.spotifyId || "",
-            status: d.status || "pending",
-            unit: d.unitId || null
-          });
-        });
-        render();
-      });
-    });
+    }
 
     function toMillis(ts) {
       if (!ts) return null;
@@ -170,16 +166,19 @@
       const toTs = toDate.value ? new Date(toDate.value).getTime() + 24*60*60*1000 - 1 : null;
 
       return allRows.filter(r => {
+        // Filtrado por unidad:
         if (unitFromURL) {
           if (r.unit === unitFromURL) {
             // ok
           } else if (r.unit == null) {
-            if (!legacyToggle.checked) return false;
+            if (!legacyToggle.checked) return false; // oculta legacy si desmarcas
           } else {
-            return false;
+            return false; // otra unidad → fuera
           }
         }
+        // Estado
         if (sVal !== "all" && r.status !== sVal) return false;
+        // Fechas
         if (fromTs && (r.ts ?? 0) < fromTs) return false;
         if (toTs && (r.ts ?? 0) > toTs) return false;
         return true;
@@ -190,9 +189,9 @@
     function groupRows(rows) {
       const groups = new Map();
       rows.forEach(r => {
-        const name = r.song ? String(r.song).trim() : "";
-        const artist = r.artist ? String(r.artist).trim() : "";
-        const keyBase = (r.id && String(r.id).trim()) || (name && artist ? `${name}|||${artist}` : name) || "";
+        const name = r.song;
+        const artist = r.artist;
+        const keyBase = (r.id) || (name && artist ? `${name}|||${artist}` : name) || "";
         const key = keyBase.toLowerCase();
         if (!key) return;
 
@@ -220,6 +219,7 @@
       const rows = getFilteredRows();
       const grouped = groupToggle.checked;
 
+      // Ajusta encabezados según modo
       if (grouped) {
         theadRow.innerHTML = `
           <th>Última vez</th>
