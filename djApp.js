@@ -1,7 +1,7 @@
 import { BRAND } from "./branding.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import {
-  getFirestore, collection, query, where, onSnapshot, updateDoc, doc
+  getFirestore, collection, query, where, onSnapshot, updateDoc, doc, getDoc
 } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -20,10 +20,28 @@ const loginBtn = document.getElementById("loginBtn");
 const djPass = document.getElementById("djPass");
 const requestsList = document.getElementById("requests");
 
-loginBtn.addEventListener("click", () => {
-  if (djPass.value !== "Dj20cantina") return alert("Contraseña incorrecta");
+async function isUnitBlocked(unitId){
+  try {
+    const snap = await getDoc(doc(db, "units", unitId || "general"));
+    return snap.exists() && snap.data()?.blocked === true;
+  } catch(e){
+    console.error("units check error", e);
+    return false;
+  }
+}
 
-  // Pide solo solicitudes PENDIENTES de esta sucursal
+loginBtn.addEventListener("click", async () => {
+  // bloqueo por sucursal (opcional)
+  const blocked = await isUnitBlocked(BRAND.unitId);
+  if (blocked) {
+    alert(`Panel bloqueado para la sucursal: ${BRAND.unitId}. Consulta al administrador.`);
+    return;
+  }
+
+  // contraseña del DJ
+  if (djPass.value !== "1985") return alert("Contraseña incorrecta");
+
+  // suscripción a solicitudes PENDIENTES de esta sucursal
   const q = query(
     collection(db, "requests"),
     where("unitId", "==", BRAND.unitId),
@@ -31,87 +49,77 @@ loginBtn.addEventListener("click", () => {
   );
 
   onSnapshot(q, (snapshot) => {
-    // 1) Agrupar solicitudes por clave (spotifyId si existe; si no, por nombre de canción)
+    // Agrupar por spotifyId; si no hay, por "canción|||artista"
     const groups = new Map();
     snapshot.forEach((docSnap) => {
       const d = docSnap.data();
-      const keyBase = (d.spotifyId && String(d.spotifyId).trim()) || (d.song && String(d.song).trim()) || "";
+      const name = d.song ? String(d.song).trim() : "";
+      const artist = d.artist ? String(d.artist).trim() : "";
+      const keyBase =
+        (d.spotifyId && String(d.spotifyId).trim()) ||
+        (name && artist ? `${name}|||${artist}` : name) || "";
       const key = keyBase.toLowerCase();
       if (!key) return;
 
       if (!groups.has(key)) {
-        groups.set(key, { docs: [], song: d.song || "", spotifyId: d.spotifyId || null, lastTs: 0 });
+        groups.set(key, {
+          docs: [],
+          song: name,
+          artist: artist,
+          spotifyId: d.spotifyId || null,
+          lastTs: 0
+        });
       }
       const g = groups.get(key);
       g.docs.push(docSnap);
-      // para ordenar por lo más reciente
-      const ts =
-        typeof d.timestamp === "number"
-          ? d.timestamp
-          : (d.timestamp?.toMillis?.() ?? 0);
+      const ts = typeof d.timestamp === "number" ? d.timestamp : (d.timestamp?.toMillis?.() ?? 0);
       g.lastTs = Math.max(g.lastTs, ts || 0);
     });
 
-    // 2) Ordenar grupos por (a) cantidad desc, (b) más reciente
-    const sorted = Array.from(groups.values()).sort((a, b) => {
-      const countDiff = b.docs.length - a.docs.length;
-      if (countDiff !== 0) return countDiff;
-      return (b.lastTs || 0) - (a.lastTs || 0);
+    const sorted = Array.from(groups.values()).sort((a,b)=>{
+      const c = b.docs.length - a.docs.length;
+      if (c !== 0) return c;
+      return (b.lastTs||0) - (a.lastTs||0);
     });
 
-    // 3) Render
     requestsList.innerHTML = "";
-    sorted.forEach((g) => {
-      const count = g.docs.length;
-      const li = document.createElement("li");
-
-      const title = document.createElement("span");
-      title.textContent = `${g.song}${g.spotifyId ? ` (ID: ${g.spotifyId})` : ""}`;
-
-      const badge = document.createElement("span");
-      if (count > 1) {
-        badge.className = "badge";
-        badge.textContent = `🔥 x${count}`;
-      }
-
-      const btnPlayed = document.createElement("button");
-      btnPlayed.textContent = "Reproducida";
-      btnPlayed.className = "btn";
-      btnPlayed.style.marginLeft = "10px";
-      btnPlayed.onclick = async () => {
-        // marcar TODAS las solicitudes del grupo como 'played'
-        await Promise.all(
-          g.docs.map((docSnap) =>
-            updateDoc(doc(db, "requests", docSnap.id), { status: "played" })
-          )
-        );
-      };
-
-      const btnRejected = document.createElement("button");
-      btnRejected.textContent = "Rechazada";
-      btnRejected.className = "btn secondary";
-      btnRejected.style.marginLeft = "8px";
-      btnRejected.onclick = async () => {
-        // marcar TODAS las solicitudes del grupo como 'rejected'
-        await Promise.all(
-          g.docs.map((docSnap) =>
-            updateDoc(doc(db, "requests", docSnap.id), { status: "rejected" })
-          )
-        );
-      };
-
-      li.appendChild(title);
-      if (count > 1) li.appendChild(badge);
-      li.appendChild(btnPlayed);
-      li.appendChild(btnRejected);
-      requestsList.appendChild(li);
-    });
-
-    // Si no hay nada
     if (sorted.length === 0) {
       const empty = document.createElement("li");
       empty.textContent = "No hay solicitudes pendientes.";
       requestsList.appendChild(empty);
+      return;
     }
+
+    sorted.forEach(g => {
+      const count = g.docs.length;
+      const li = document.createElement("li");
+
+      const title = document.createElement("span");
+      const displayArtist = g.artist || "Artista desconocido";
+      title.textContent = `${g.song} — ${displayArtist}${g.spotifyId ? ` (ID: ${g.spotifyId})` : ""}`;
+
+      const badge = document.createElement("span");
+      if (count > 1) { badge.className = "badge"; badge.textContent = `🔥 x${count}`; }
+
+      const btnPlayed = document.createElement("button");
+      btnPlayed.textContent = "Reproducida";
+      btnPlayed.className = "btn"; btnPlayed.style.marginLeft = "10px";
+      btnPlayed.onclick = async () => {
+        await Promise.all(g.docs.map((d)=> updateDoc(doc(db, "requests", d.id), { status: "played" })));
+      };
+
+      const btnRejected = document.createElement("button");
+      btnRejected.textContent = "Rechazada";
+      btnRejected.className = "btn secondary"; btnRejected.style.marginLeft = "8px";
+      btnRejected.onclick = async () => {
+        await Promise.all(g.docs.map((d)=> updateDoc(doc(db, "requests", d.id), { status: "rejected" })));
+      };
+
+      li.appendChild(title);
+      if (count>1) li.appendChild(badge);
+      li.appendChild(btnPlayed);
+      li.appendChild(btnRejected);
+      requestsList.appendChild(li);
+    });
   });
 });
