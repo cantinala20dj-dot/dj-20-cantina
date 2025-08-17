@@ -1,7 +1,7 @@
 // branding.js — Configuración de marca y sucursal
 const BRAND = {
   name: "DJ’ Cantina 20",
-  logo: "/assets/logo.png", // coloca tu logo en /public/assets/logo.png
+  logo: "/logovideos.png", // coloca tu logo en /public/assets/logo.png
   instagramUrl: "https://instagram.com/TU_INSTAGRAM", // editable
   unitId: "general" // se puede sobrescribir con ?unit=sucursal1
 };
