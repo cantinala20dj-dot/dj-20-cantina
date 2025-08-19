@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard de Sucursales — DJ’ Cantina 20</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ====== Login overlay ====== */
+    .gate{
+      position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #1b2030 0%, transparent 60%),
+        radial-gradient(900px 500px at 110% -10%, #271b2a 0%, transparent 60%),
+        linear-gradient(180deg, #101016 0%, #0f0f12 100%);
+    }
+    .gate-card{
+      width:100%; max-width:380px; background:#171821; border:1px solid #2a2b35; border-radius:14px;
+      padding:22px 20px; box-shadow:0 20px 60px rgba(0,0,0,.45); text-align:center;
+    }
+    .gate-logo{
+      width:72px; height:72px; border-radius:12px; border:1px solid #2c2d36; object-fit:cover; margin:0 auto 10px;
+    }
+    .gate h2{ margin:6px 0 4px; font-size:20px; color:#ececec }
+    .gate p{ margin:0 0 14px; color:#b3b3b9; font-size:13px }
+
+    .pass-wrap{ position:relative; display:flex; }
+    .pass-wrap input{
+      flex:1; padding:12px 40px 12px 12px; border-radius:10px; border:1px solid #2a2b35;
+      background:#0f1015; color:#eee; outline:none; font-size:15px;
+    }
+    .pass-wrap input:focus{ border-color:#3b3d49; box-shadow:0 0 0 3px rgba(255,62,127,.15) }
+    .eye-toggle{
+      position:absolute; right:8px; top:50%; transform:translateY(-50%);
+      background:transparent; border:none; cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center;
+    }
+    .eye-toggle svg{ width:18px; height:18px; opacity:.9; color:#cbd5e1 }
+    .gate-btn{
+      margin-top:12px; width:100%;
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      background:linear-gradient(135deg, #ff3e7f, #ff7a59); color:#fff; border:none; border-radius:10px;
+      padding:12px 16px; font-weight:600; cursor:pointer;
+    }
+    .gate-err{ margin-top:10px; color:#ffb4b4; font-size:13px; min-height:18px; }
+
+    /* ====== Tabla y cabecera ====== */
+    body{ align-items:flex-start; justify-content:flex-start; }
+    .container{ max-width:1100px; }
+    table{ width:100%; border-collapse: collapse; }
+    th, td{ border:1px solid #2a2b35; padding:8px; font-size:14px; }
+    th{ background:#1b1c23; text-align:left; }
+    .row-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .header img#logo{ width:56px; height:56px; object-fit:cover; border-radius:12px; border:1px solid #2c2d36; }
+    .muted{ color:#b3b3b9 }
+    .inputs{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .inputs input{ padding:10px 12px; border-radius:8px; border:1px solid #2a2b35; background:#0f1015; color:#eee; min-width:220px; }
+    .btn.small{ padding:8px 10px; font-size:13px; }
+    .badge{ padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #2a2b35; }
+    .hint{ font-size:12px; color:#9aa0a6; margin-top:6px; }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div class="gate" id="gate" style="display:none;">
+    <div class="gate-card">
+      <img id="gateLogo" class="gate-logo" alt="Logo">
+      <h2>Acceso al Dashboard</h2>
+      <p>Contraseña de administración</p>
+      <div class="pass-wrap">
+        <input id="gatePass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
+        <button class="eye-toggle" id="toggleGatePass" type="button" aria-label="Mostrar/Ocultar contraseña">
+          <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke-width="2"/>
+            <circle cx="12" cy="12" r="3" stroke-width="2"/>
+          </svg>
+          <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="display:none">
+            <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a20.29 20.29 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.49M1 1l22 22" stroke-width="2"/>
+          </svg>
+        </button>
+      </div>
+      <button class="gate-btn" id="gateBtn">Entrar</button>
+      <div class="gate-err" id="gateErr"></div>
+    </div>
+  </div>
+
+  <!-- CONTENIDO -->
+  <main class="container" id="dashRoot" style="visibility:hidden;">
+    <header class="header">
+      <img id="logo" alt="Logo">
+      <div>
+        <h1 data-brand-name>DJ’ Cantina 20 — Sucursales</h1>
+        <p class="muted">Crear / bloquear / borrar unidades. Links rápidos.</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <h3>Crear / Actualizar sucursal</h3>
+      <div class="inputs">
+        <input id="unitId"   placeholder="ID (ej: miami, polanco) — requerido"/>
+        <input id="unitName" placeholder="Nombre visible (ej: Miami)"/>
+        <input id="unitIG"   placeholder="Instagram URL (opcional)"/>
+        <button class="btn" id="saveUnit">Guardar</button>
+      </div>
+      <div class="hint">
+        • El <b>ID</b> es lo que va en la URL (<code>?unit=miami</code>).  
+        • Si la sucursal ya existe, se actualizarán sus datos.
+      </div>
+
+      <h3 style="margin-top:18px;">Listado de sucursales</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Unit (id)</th>
+            <th>Nombre</th>
+            <th>Instagram</th>
+            <th>Bloqueo</th>
+            <th>Links</th>
+            <th>Eliminar</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import {
+      getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, getDoc
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+    // Branding
+    (function(){
+      const logo = document.getElementById("logo");
+      const gateLogo = document.getElementById("gateLogo");
+      const setLogo = (img)=>{ if (img){ img.src="/assets/logo.png"; img.onerror=()=>{ img.src="/logo.png"; }; } };
+      setLogo(logo); setLogo(gateLogo);
+      document.querySelectorAll("[data-brand-name]").forEach(el=> el.textContent="DJ’ Cantina 20 — Sucursales");
+    })();
+
+    // Login (1985) con sessionStorage
+    const DASH_PASS = "1985";
+    const gate = document.getElementById("gate");
+    const dashRoot = document.getElementById("dashRoot");
+    const gatePass = document.getElementById("gatePass");
+    const gateBtn  = document.getElementById("gateBtn");
+    const gateErr  = document.getElementById("gateErr");
+    const eyeOpen  = document.getElementById("eyeOpen");
+    const eyeClosed= document.getElementById("eyeClosed");
+    document.getElementById("toggleGatePass")?.addEventListener("click", ()=>{
+      const showing = gatePass.type === "text";
+      gatePass.type = showing ? "password" : "text";
+      eyeOpen.style.display = showing ? "" : "none";
+      eyeClosed.style.display = showing ? "none" : "";
+    });
+    function showGate(){ gate.style.display="flex"; dashRoot.style.visibility="hidden"; setTimeout(()=>gatePass?.focus(),10); }
+    function enter(){ gate.style.display="none"; dashRoot.style.visibility="visible"; }
+    function tryLogin(){
+      const v = (gatePass.value||"").trim();
+      if (v !== DASH_PASS){ gateErr.textContent = "Contraseña incorrecta"; return; }
+      sessionStorage.setItem("dashboard_units_ok","1"); enter();
+    }
+    gateBtn?.addEventListener("click", tryLogin);
+    gatePass?.addEventListener("keydown",(e)=>{ if(e.key==="Enter") tryLogin(); });
+    if (sessionStorage.getItem("dashboard_units_ok")==="1"){ enter(); } else { showGate(); }
+
+    // Firebase (Cantina 20)
+    const firebaseConfig = {
+      apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
+      authDomain: "dj-cantina-20.firebaseapp.com",
+      projectId: "dj-cantina-20",
+      storageBucket: "dj-cantina-20.firebasestorage.app",
+      messagingSenderId: "777157429108",
+      appId: "1:777157429108:web:de2efae209dcca67228e21"
+    };
+    const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // DOM
+    const tbody   = document.getElementById("tbody");
+    const saveBtn = document.getElementById("saveUnit");
+    const unitId  = document.getElementById("unitId");
+    const unitName= document.getElementById("unitName");
+    const unitIG  = document.getElementById("unitIG");
+
+    // Crear/actualizar unidad (colección 'units')
+    saveBtn.onclick = async ()=>{
+      let id = (unitId.value||"").trim().toLowerCase();
+      if (!id) return alert("El ID es obligatorio.");
+      const name = (unitName.value||"").trim() || id.charAt(0).toUpperCase()+id.slice(1);
+      const ig   = (unitIG.value||"").trim();
+
+      const ref = doc(db,"units",id);
+      const snap = await getDoc(ref);
+      const exists = snap.exists();
+
+      const payload = {
+        name,
+        instagramUrl: ig || (exists ? (snap.data().instagramUrl||"") : ""),
+        blocked: exists ? !!(snap.data().blocked) : false
+      };
+      await setDoc(ref, payload, { merge:true });
+
+      unitId.value = unitName.value = unitIG.value = "";
+      alert(exists ? "Sucursal actualizada" : "Sucursal creada");
+    };
+
+    // Tabla de unidades
+    onSnapshot(collection(db,"units"), (snap)=>{
+      tbody.innerHTML = "";
+      const base = location.origin;
+      snap.forEach(docSnap=>{
+        const d = docSnap.data() || {};
+        const id = docSnap.id;
+        const name = d.name || id;
+        const ig = d.instagramUrl || "";
+        const blocked = !!d.blocked;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${id}</td>
+          <td>${name}</td>
+          <td>${ig ? `<a href="${ig}" target="_blank" rel="noopener">${ig}</a>`:"-"}</td>
+          <td>
+            <label class="switch">
+              <input type="checkbox" ${blocked?"checked":""} data-toggle="${id}">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td class="row-actions">
+            <a class="btn secondary small" href="${base}/index.html?unit=${id}${ig?`&ig=${encodeURIComponent(ig)}`:""}" target="_blank">🎵 Público</a>
+            <a class="btn secondary small" href="${base}/dj.html?unit=${id}" target="_blank">🎧 Panel</a>
+            <a class="btn secondary small" href="${base}/history.html?unit=${id}" target="_blank">📊 Historial</a>
+          </td>
+          <td><button class="btn small" data-del="${id}">Borrar</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Toggle bloqueo
+      tbody.querySelectorAll('input[data-toggle]').forEach(chk=>{
+        chk.onchange = async (e)=>{
+          const id = e.target.getAttribute("data-toggle");
+          await updateDoc(doc(db,"units",id), { blocked: e.target.checked });
+        };
+      });
+
+      // Borrar unidad
+      tbody.querySelectorAll('button[data-del]').forEach(btn=>{
+        btn.onclick = async (e)=>{
+          const id = e.target.getAttribute("data-del");
+          if (!confirm(`¿Borrar la sucursal "${id}"? Esto elimina solo el registro de la unidad (no las solicitudes).`)) return;
+          await deleteDoc(doc(db,"units",id));
+        };
+      });
+    });
+  </script>
+</body>
+</html>
