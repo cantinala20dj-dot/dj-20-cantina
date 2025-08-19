@@ -2,7 +2,7 @@
 export let UNIT_ID = "general";
 export const BRAND = {
   name: "DJ’ Cantina 20",
-  logo: "/assets/logo.png",
+  logo: "/logovideos.png",
   instagramUrl: "https://www.instagram.com/cantinaveinte"
 };
 
