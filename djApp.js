@@ -1,170 +1,131 @@
-// djApp.js — Panel del DJ con bloqueo por sucursal (password: Dj20cantina)
-
-import { BRAND } from "./branding.js";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+// djApp.js — Cantina 20: login + bloqueo por unidad
+import { UNIT_ID, db } from "./branding.js";
 import {
-  getFirestore, collection, query, where, onSnapshot,
-  updateDoc, doc, onSnapshot as onDocSnapshot
+  collection, query, where, onSnapshot, updateDoc, doc, getDoc
 } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-// --- Firebase ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
-  authDomain: "dj-cantina-20.firebaseapp.com",
-  projectId: "dj-cantina-20",
-  storageBucket: "dj-cantina-20.firebasestorage.app",
-  messagingSenderId: "777157429108",
-  appId: "1:777157429108:web:de2efae209dcca67228e21"
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- DOM ---
-const loginBtn = document.getElementById("loginBtn");
-const djPass = document.getElementById("djPass");
+// ===== DOM =====
+const loginBtn     = document.getElementById("loginBtn");
+const djPassInput  = document.getElementById("djPass");
 const requestsList = document.getElementById("requests");
-const unitId = (BRAND.unitId || "general");
 
-// Banner opcional si lo agregaste en dj.html:
-// <div id="blockNotice" style="display:none;margin-bottom:10px;color:#ffb4b4">
-//   ⚠️ Panel bloqueado por el administrador para esta sucursal.
-// </div>
-const blockNotice = document.getElementById("blockNotice");
+const MASTER_PASS = "Dj20cantina";   // misma clave maestra
 
-// --- Utils ---
-function tsToMillis(ts){
-  if (!ts) return 0;
-  if (typeof ts === "number") return ts;
-  if (ts instanceof Date) return ts.getTime();
-  if (typeof ts.toMillis === "function") return ts.toMillis();
-  return 0;
+// Banner de estado (si no existe, lo creo)
+let banner = document.getElementById("unitBanner");
+if (!banner) {
+  banner = document.createElement("div");
+  banner.id = "unitBanner";
+  banner.style.cssText = "margin:10px 0 0; padding:10px 12px; border-radius:10px; font-size:14px; display:none;";
+  const card = document.querySelector(".card") || document.body;
+  card.prepend(banner);
 }
 
-// --- 1) Escuchar en tiempo real el estado de bloqueo de la sucursal ---
-let isBlocked = false;
+function showBanner(msg, type="info"){
+  const styles = {
+    info:  "background:#0f141c; color:#cde3ff; border:1px solid #243041;",
+    warn:  "background:#1c140f; color:#ffd9b3; border:1px solid #413224;",
+    error: "background:#1a0f10; color:#ffc9d0; border:1px solid #402430;"
+  };
+  banner.style.cssText = `margin:10px 0 0; padding:10px 12px; border-radius:10px; font-size:14px; ${styles[type] || styles.info}`;
+  banner.textContent = msg;
+  banner.style.display = "block";
+}
 
-onDocSnapshot(doc(db, "units", unitId), (snap) => {
-  isBlocked = !!(snap.exists() && snap.data()?.blocked === true);
-  // UI
-  if (blockNotice) blockNotice.style.display = isBlocked ? "block" : "none";
-  loginBtn.disabled = isBlocked;
-  djPass.disabled = isBlocked;
-}, (err) => {
-  // Si hay error leyendo el doc, por seguridad NO bloqueamos el panel automáticamente.
-  console.error("Error leyendo units/"+unitId, err);
-  isBlocked = false;
-  if (blockNotice) blockNotice.style.display = "none";
-  loginBtn.disabled = false;
-  djPass.disabled = false;
-});
+function clearBanner(){
+  banner.style.display = "none";
+  banner.textContent = "";
+}
 
-// --- 2) Login y suscripción a solicitudes pendientes ---
-loginBtn.addEventListener("click", async () => {
-  // Bloqueo activo → salir
-  if (isBlocked) {
-    alert(`Panel bloqueado para la sucursal: ${unitId}. Consulta al administrador.`);
-    return;
+function setDisabledLogin(disabled){
+  if (djPassInput) djPassInput.disabled = disabled;
+  if (loginBtn)    loginBtn.disabled = disabled;
+}
+
+// Verifica si la unidad está bloqueada en Firestore
+async function isUnitBlocked(unitId){
+  try{
+    const snap = await getDoc(doc(db, "units", unitId));
+    if (!snap.exists()) return false; // si no existe, branding.js la creará y se considera activa
+    return !!(snap.data()||{}).blocked;
+  }catch(e){
+    console.warn("unit blocked check:", e);
+    return false;
   }
+}
 
-  // Password robusta (recorta espacios)
-  const val = (djPass.value || "").trim();
-  if (val !== "Dj20cantina") {
-    alert("Contraseña incorrecta");
-    return;
-  }
+loginBtn?.addEventListener("click", async () => {
+  const pass = (djPassInput?.value || "").trim();
+  if (!pass) return alert("Escribe la contraseña del DJ.");
 
-  // Suscribir a solicitudes PENDIENTES de esta sucursal
-  const q = query(
-    collection(db, "requests"),
-    where("unitId", "==", unitId),
-    where("status", "==", "pending")
-  );
+  try {
+    setDisabledLogin(true);
+    clearBanner();
 
-  onSnapshot(q, (snapshot) => {
-    // Agrupar por spotifyId; si no hay, por "canción|||artista"
-    const groups = new Map();
-
-    snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      const name   = (d.song   || "").trim();
-      const artist = (d.artist || "").trim();
-      const keyBase =
-        (d.spotifyId && String(d.spotifyId).trim()) ||
-        (name && artist ? `${name}|||${artist}` : name) || "";
-      const key = keyBase.toLowerCase();
-      if (!key) return;
-
-      if (!groups.has(key)) {
-        groups.set(key, {
-          docs: [],
-          song: name,
-          artist: artist,
-          spotifyId: d.spotifyId || null,
-          lastTs: 0
-        });
-      }
-      const g = groups.get(key);
-      g.docs.push(docSnap);
-      g.lastTs = Math.max(g.lastTs, tsToMillis(d.timestamp));
-    });
-
-    // Orden: primero por cantidad desc, luego por más reciente
-    const sorted = Array.from(groups.values()).sort((a,b)=>{
-      const c = b.docs.length - a.docs.length;
-      if (c !== 0) return c;
-      return (b.lastTs || 0) - (a.lastTs || 0);
-    });
-
-    // Render
-    requestsList.innerHTML = "";
-    if (sorted.length === 0) {
-      const empty = document.createElement("li");
-      empty.textContent = "No hay solicitudes pendientes.";
-      requestsList.appendChild(empty);
+    // 1) Verificación de bloqueo por unidad
+    if (await isUnitBlocked(UNIT_ID)) {
+      showBanner("🚫 Esta sucursal está desactivada por el administrador. No es posible operar el panel.", "warn");
+      setDisabledLogin(false);
       return;
     }
 
-    sorted.forEach(g => {
-      const count = g.docs.length;
-      const li = document.createElement("li");
+    // 2) Validación de contraseña (solo maestra en Cantina 20)
+    const ok = (pass === MASTER_PASS);
+    if (!ok) {
+      setDisabledLogin(false);
+      return alert("Contraseña incorrecta.");
+    }
 
-      // Título: Canción — Artista (ID opcional)
-      const displayArtist = g.artist || "Artista desconocido";
-      const title = document.createElement("span");
-      title.textContent = `${g.song} — ${displayArtist}${g.spotifyId ? ` (ID: ${g.spotifyId})` : ""}`;
+    // 3) Suscripción a solicitudes pendientes de la unidad
+    const q = query(
+      collection(db, "requests"),
+      where("unitId", "==", UNIT_ID),
+      where("status", "==", "pending")
+    );
 
-      // Badge 🔥 xN
-      if (count > 1) {
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = `🔥 x${count}`;
-        li.appendChild(title);
-        li.appendChild(badge);
+    onSnapshot(q, (snapshot) => {
+      requestsList.innerHTML = "";
+      let count = 0;
+
+      snapshot.forEach((docSnap) => {
+        const r = docSnap.data();
+        count++;
+
+        const li = document.createElement("li");
+        li.textContent = `${r.song} — ${r.artist || "Artista desconocido"}`;
+
+        const btnPlayed = document.createElement("button");
+        btnPlayed.textContent = "Reproducida";
+        btnPlayed.className = "btn"; btnPlayed.style.marginLeft = "10px";
+        btnPlayed.onclick = async () => {
+          await updateDoc(doc(db, "requests", docSnap.id), { status: "played" });
+        };
+
+        const btnRejected = document.createElement("button");
+        btnRejected.textContent = "Rechazada";
+        btnRejected.className = "btn secondary"; btnRejected.style.marginLeft = "8px";
+        btnRejected.onclick = async () => {
+          await updateDoc(doc(db, "requests", docSnap.id), { status: "rejected" });
+        };
+
+        li.appendChild(btnPlayed);
+        li.appendChild(btnRejected);
+        requestsList.appendChild(li);
+      });
+
+      if (count === 0) {
+        showBanner("No hay solicitudes pendientes en esta sucursal.", "info");
       } else {
-        li.appendChild(title);
+        clearBanner();
       }
-
-      // Botón Reproducida
-      const btnPlayed = document.createElement("button");
-      btnPlayed.textContent = "Reproducida";
-      btnPlayed.className = "btn";
-      btnPlayed.style.marginLeft = "10px";
-      btnPlayed.onclick = async () => {
-        await Promise.all(g.docs.map((d)=> updateDoc(doc(db, "requests", d.id), { status: "played" })));
-      };
-
-      // Botón Rechazada
-      const btnRejected = document.createElement("button");
-      btnRejected.textContent = "Rechazada";
-      btnRejected.className = "btn secondary";
-      btnRejected.style.marginLeft = "8px";
-      btnRejected.onclick = async () => {
-        await Promise.all(g.docs.map((d)=> updateDoc(doc(db, "requests", d.id), { status: "rejected" })));
-      };
-
-      li.appendChild(btnPlayed);
-      li.appendChild(btnRejected);
-      requestsList.appendChild(li);
     });
-  });
+
+    if (djPassInput) djPassInput.value = "";
+    alert(`Acceso concedido — Sucursal: ${UNIT_ID}`);
+  } catch (e) {
+    console.error(e);
+    alert("Error al iniciar sesión. Revisa conexión o Reglas de Firestore.");
+  } finally {
+    setDisabledLogin(false);
+  }
 });
