@@ -134,7 +134,7 @@
     (function(){
       const logo = document.getElementById("logo");
       const gateLogo = document.getElementById("gateLogo");
-      const setLogo = (img)=>{ if (img){ img.src="/assets/logo.png"; img.onerror=()=>{ img.src="/logo.png"; }; } };
+      const setLogo = (img)=>{ if (img){ img.src="/logovideos.png"; img.onerror=()=>{ img.src="/logo.png"; }; } };
       setLogo(logo); setLogo(gateLogo);
       document.querySelectorAll("[data-brand-name]").forEach(el=> el.textContent="DJ’ Cantina 20 — Sucursales");
     })();
