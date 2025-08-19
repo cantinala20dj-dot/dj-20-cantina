@@ -1,77 +1,94 @@
-import { BRAND } from "./branding.js";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import {
-  getFirestore, collection, addDoc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+// app.js — DJ’ Cantina 20: sugerencias + envío con verificación de bloqueo por unidad
+import { BRAND, UNIT_ID, db } from "./branding.js";
+import { collection, addDoc, serverTimestamp, getDoc, doc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAJGgPddVWwKytKv8GlPvZ27vkqZfod-4U",
-  authDomain: "dj-cantina-20.firebaseapp.com",
-  projectId: "dj-cantina-20",
-  storageBucket: "dj-cantina-20.firebasestorage.app",
-  messagingSenderId: "777157429108",
-  appId: "1:777157429108:web:de2efae209dcca67228e21"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
+// DOM
 const input = document.getElementById("songSearch");
-const suggestions = document.getElementById("suggestions");
+let suggestions = document.getElementById("suggestions");
 const sendBtn = document.getElementById("sendSong");
 const status = document.getElementById("status");
 
-// debounce
+// Asegura <ul id="suggestions">
+if (!suggestions) {
+  suggestions = document.createElement("ul");
+  suggestions.id = "suggestions";
+  input.parentElement.style.position = "relative";
+  input.parentElement.appendChild(suggestions);
+}
+
+// Utils
 function debounce(fn, wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), wait); } }
+async function getJSON(url){ try{ const r=await fetch(url); if(!r.ok) return null; return await r.json(); }catch{ return null; } }
 
-input.addEventListener("input", debounce(async () => {
-  const query = input.value.trim();
-  suggestions.innerHTML = "";
-  if (!query) return;
+// Autocompletado (Spotify → iTunes → nada)
+async function fetchSuggestions(q){
+  const sp = await getJSON(`/api/searchSpotify?q=${encodeURIComponent(q)}`);
+  if (sp?.results?.length) return sp.results;
+  const it = await getJSON(`/api/searchiTunes?q=${encodeURIComponent(q)}`);
+  if (it?.results?.length) return it.results;
+  return [];
+}
 
-  try {
-    const res = await fetch(`/api/searchSpotify?q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    if (!data.results || data.results.length === 0) return;
-
-    data.results.forEach(track => {
-      const li = document.createElement("li");
-      li.textContent = `${track.name} — ${track.artist}`;
-      li.addEventListener("click", () => {
-        input.value = track.name;                // mostramos solo la canción en el input
-        input.dataset.spotifyId = track.id;      // guardamos id
-        input.dataset.artist = track.artist;     // guardamos artista  << NUEVO
-        suggestions.innerHTML = "";
-      });
-      suggestions.appendChild(li);
+function renderList(items){
+  suggestions.innerHTML="";
+  items.forEach(track=>{
+    const li=document.createElement("li");
+    li.textContent = `${track.name} — ${track.artist || "Artista desconocido"}`;
+    li.addEventListener("click", ()=>{
+      input.value = track.name;
+      input.dataset.spotifyId = track.id || "";
+      input.dataset.artist = track.artist || "";
+      suggestions.innerHTML=""; suggestions.style.display="none";
     });
-  } catch(e){ console.error(e); }
-}, 180));
+    suggestions.appendChild(li);
+  });
+  suggestions.style.display = items.length ? "block" : "none";
+}
 
-sendBtn.addEventListener("click", async () => {
+input.addEventListener("input", debounce(async ()=>{
+  const q = input.value.trim();
+  input.dataset.spotifyId=""; input.dataset.artist="";
+  suggestions.innerHTML=""; suggestions.style.display="none";
+  if (!q) return;
+  const list = await fetchSuggestions(q);
+  renderList(list || []);
+}, 140));
+
+// 👉 Verifica bloqueo de unidad antes de enviar
+async function isUnitBlocked(unitId){
+  try{
+    const snap = await getDoc(doc(db, "units", unitId));
+    if (!snap.exists()) return false; // si no existe, tratamos como activa (branding.js la crea)
+    return !!(snap.data()||{}).blocked;
+  }catch{ return false; }
+}
+
+sendBtn.addEventListener("click", async ()=>{
   const song = input.value.trim();
   const spotifyId = input.dataset.spotifyId || null;
-  const artist = input.dataset.artist || "";     // << NUEVO
+  const artist = input.dataset.artist || "";
   if (!song) return;
 
-  try {
+  // 1) Bloqueo
+  if (await isUnitBlocked(UNIT_ID)){
+    status.textContent = "🚫 Esta sucursal está temporalmente desactivada.";
+    return;
+  }
+
+  // 2) Guardar solicitud
+  try{
     await addDoc(collection(db, "requests"), {
-      song,
-      artist,               // << NUEVO
-      spotifyId,
+      song, artist, spotifyId,
       status: "pending",
-      unitId: BRAND.unitId,
+      unitId: UNIT_ID,
       timestamp: serverTimestamp()
     });
     status.textContent = "✅ Enviado con éxito. ¡Dale like a nuestro Instagram!";
     if (window._toast) window._toast("✅ ¡Solicitud enviada!");
-
-    input.value = "";
-    input.dataset.spotifyId = "";
-    input.dataset.artist = "";                  // << NUEVO
-    suggestions.innerHTML = "";
-  } catch (error) {
-    status.textContent = "❌ Error al enviar, intenta de nuevo.";
-    console.error(error);
+    input.value=""; input.dataset.spotifyId=""; input.dataset.artist="";
+    suggestions.innerHTML=""; suggestions.style.display="none";
+  }catch(e){
+    console.error(e);
+    status.textContent = "❌ Error al enviar; intenta de nuevo.";
   }
 });
